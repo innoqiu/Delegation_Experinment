@@ -4,9 +4,9 @@ import { ChoiceGrid, Field, TextArea, TextInput } from "../components/FormContro
 import { Icon } from "../components/Icons.jsx";
 
 const EMPTY = {
-  task1: { interests: "", locations: "", availability: "", boundaries: "", flexibility: "", approvalRequirements: "" },
-  task2: { connectionTypes: [], interests: "", socialPace: "", availability: "", needs: "", personality: "", firstMeetingConditions: "", disclosureAllowed: "", disclosureRestricted: "", relationshipBoundaries: "", approvalRequirements: "" },
-  task3: {},
+  task1: { interests: "", locations: "", availability: "", boundaries: "", flexibility: "", approvalRequirements: "", customFields: [] },
+  task2: { connectionTypes: [], interests: "", socialPace: "", availability: "", needs: "", personality: "", firstMeetingConditions: "", disclosureAllowed: "", disclosureRestricted: "", relationshipBoundaries: "", approvalRequirements: "", customFields: [] },
+  task3: { customFields: [] },
 };
 
 const CONNECTIONS = [
@@ -25,6 +25,35 @@ function Section({ number, title, description, children, muted = false }) {
       </div>
       {children}
     </section>
+  );
+}
+
+function CustomProfileFields({ fields, readOnly, onAdd, onChange, onRemove }) {
+  return (
+    <div className="custom-profile-fields">
+      <div className="custom-fields-heading">
+        <div>
+          <h3>自定义实验条件</h3>
+          <p>添加本问卷尚未覆盖的授权、偏好或边界；有内容的条目会自动加入该Task的代理提示词。</p>
+        </div>
+        {!readOnly && <button type="button" className="button button-secondary button-small" onClick={onAdd} disabled={fields.length >= 20} title={fields.length >= 20 ? "每个Profile最多添加20项" : "添加自定义输入项"}><Icon name="plus" size={16} />添加输入项</button>}
+      </div>
+      {fields.length ? (
+        <div className="custom-fields-list">
+          {fields.map((field, index) => (
+            <div className="custom-field-row" key={field.id}>
+              <Field label={`条件名称 ${index + 1}`} hint="例如：无障碍需求、沟通方式、费用分担">
+                <TextInput value={field.label} maxLength={120} placeholder="输入条件名称" onChange={(event) => onChange(field.id, "label", event.target.value)} readOnly={readOnly} />
+              </Field>
+              <Field label="具体内容">
+                <TextArea value={field.value} maxLength={5000} placeholder="说明代理需要了解或遵守的具体条件" onChange={(event) => onChange(field.id, "value", event.target.value)} readOnly={readOnly} />
+              </Field>
+              {!readOnly && <button type="button" className="icon-button custom-field-delete" aria-label={`删除自定义条件 ${index + 1}`} title="删除此输入项" onClick={() => onRemove(field.id)}><Icon name="trash" size={17} /></button>}
+            </div>
+          ))}
+        </div>
+      ) : <div className="custom-fields-empty">尚未添加自定义条件。</div>}
+    </div>
   );
 }
 
@@ -55,6 +84,36 @@ export default function AgentConfigPage({ user, notify }) {
 
   const update = (task, key, value) => {
     setProfiles((current) => ({ ...current, [task]: { ...current[task], [key]: value } }));
+  };
+
+  const addCustomField = (task) => {
+    setProfiles((current) => ({
+      ...current,
+      [task]: {
+        ...current[task],
+        customFields: [...(current[task]?.customFields || []), { id: crypto.randomUUID(), label: "", value: "" }],
+      },
+    }));
+  };
+
+  const updateCustomField = (task, id, key, value) => {
+    setProfiles((current) => ({
+      ...current,
+      [task]: {
+        ...current[task],
+        customFields: (current[task]?.customFields || []).map((field) => field.id === id ? { ...field, [key]: value } : field),
+      },
+    }));
+  };
+
+  const removeCustomField = (task, id) => {
+    setProfiles((current) => ({
+      ...current,
+      [task]: {
+        ...current[task],
+        customFields: (current[task]?.customFields || []).filter((field) => field.id !== id),
+      },
+    }));
   };
 
   async function save() {
@@ -117,6 +176,13 @@ export default function AgentConfigPage({ user, notify }) {
                 <TextArea value={profiles.task1.approvalRequirements} onChange={(e) => update("task1", "approvalRequirements", e.target.value)} readOnly={readOnly} />
               </Field>
             </div>
+            <CustomProfileFields
+              fields={profiles.task1.customFields || []}
+              readOnly={readOnly}
+              onAdd={() => addCustomField("task1")}
+              onChange={(id, key, value) => updateCustomField("task1", id, key, value)}
+              onRemove={(id) => removeCustomField("task1", id)}
+            />
           </Section>
 
           <Section number="2" title="新关系介绍" description="定义你希望探索的关系、选择性披露范围，以及第一次直接互动的条件。">
@@ -135,6 +201,13 @@ export default function AgentConfigPage({ user, notify }) {
               <Field label="关系边界"><TextArea value={profiles.task2.relationshipBoundaries} onChange={(e) => update("task2", "relationshipBoundaries", e.target.value)} readOnly={readOnly} /></Field>
               <Field label="需要本人批准的事项" className="span-two"><TextInput value={profiles.task2.approvalRequirements} onChange={(e) => update("task2", "approvalRequirements", e.target.value)} readOnly={readOnly} /></Field>
             </div>
+            <CustomProfileFields
+              fields={profiles.task2.customFields || []}
+              readOnly={readOnly}
+              onAdd={() => addCustomField("task2")}
+              onChange={(id, key, value) => updateCustomField("task2", id, key, value)}
+              onRemove={(id) => removeCustomField("task2", id)}
+            />
           </Section>
 
           <Section number="3" title="尚未启用" description="Profile 3将在研究设计确定后开放配置。" muted>

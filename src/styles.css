@@ -97,6 +97,16 @@ p { color: var(--muted); line-height: 1.55; }
 .section-heading h2 { margin-bottom: 4px; }
 .section-heading p { margin: 0; font-size: 12px; }
 .disabled-profile { height: 40px; display: flex; align-items: center; color: var(--faint); font-size: 13px; }
+.custom-profile-fields { display: grid; gap: 13px; padding-top: 18px; border-top: 1px solid var(--border); }
+.custom-fields-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.custom-fields-heading h3 { margin-bottom: 4px; font-size: 14px; }
+.custom-fields-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+.custom-fields-list { display: grid; gap: 10px; }
+.custom-field-row { display: grid; grid-template-columns: minmax(190px, .65fr) minmax(280px, 1.35fr) 36px; gap: 14px; align-items: start; padding: 14px; border: 1px solid var(--border); border-radius: 5px; background: #fafbfc; }
+.custom-field-row .textarea { min-height: 76px; }
+.custom-field-delete { margin-top: 25px; color: var(--red); }
+.custom-field-delete:hover { color: var(--red); border-color: #e4a09d; }
+.custom-fields-empty { padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 5px; color: var(--faint); background: #fafbfc; font-size: 12px; }
 
 .endpoint-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .endpoint-panel, .task-editor { border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
@@ -291,6 +301,9 @@ p { color: var(--muted); line-height: 1.55; }
   .page-heading-row, .recap-header { flex-direction: column; }
   .page-actions, .decision-buttons { width: 100%; flex-wrap: wrap; }
   .three-columns, .endpoint-grid, .task-meta-row { grid-template-columns: 1fr; }
+  .custom-fields-heading { flex-direction: column; }
+  .custom-field-row { grid-template-columns: 1fr; }
+  .custom-field-delete { width: 100%; margin-top: 0; }
   .span-two { grid-column: auto; }
   .interaction-top { grid-template-columns: 1fr; }
   .agent-column:first-child, .agent-column:last-child { border: 0; border-bottom: 1px solid var(--border); }

@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 const COMPLETION = "我认为任务已完成申请结束";
 const dataDir = mkdtempSync(join(tmpdir(), "proxylab-smoke-"));
+const receivedSystemPrompts = [];
 
 function listenAt(server, port) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -50,6 +51,7 @@ const mock = createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const system = body.messages?.[0]?.content || "";
+    receivedSystemPrompts.push(system);
     const content = system.includes("recap生成器")
       ? "## 临时候选结果\n- 已形成待双方批准的候选方案。\n\n## 需要你采取的行动\n- 请批准、修改或拒绝。"
       : `我建议选择双方时间与边界均可接受的候选方案。\n${COMPLETION}`;
@@ -106,7 +108,10 @@ try {
 
   const ownProfile = await request("/api/profiles/P1A", { token: p1a.token });
   ownProfile.participant.profiles.task1.interests = "展览与散步";
+  ownProfile.participant.profiles.task1.customFields = [{ id: "accessibility", label: "无障碍需求", value: "场地必须提供电梯" }];
   await request("/api/profiles/P1A", { token: p1a.token, method: "PUT", body: { profiles: ownProfile.participant.profiles } });
+  const savedProfile = await request("/api/profiles/P1A", { token: p1a.token });
+  assert.deepEqual(savedProfile.participant.profiles.task1.customFields, [{ id: "accessibility", label: "无障碍需求", value: "场地必须提供电梯" }]);
   await request("/api/profiles/P1B", { token: p1a.token, expected: 403 });
 
   const modelResult = await request("/api/model-config", { token: admin.token });
@@ -136,10 +141,13 @@ try {
   assert.equal(Object.keys(session.recaps).length, 2);
   assert.equal(session.modelSnapshot.agent1.apiKey, undefined);
   assert.equal(session.modelSnapshot.agent1.hasApiKey, true);
+  assert.equal(session.profileSnapshot.P1A.customFields[0].label, "无障碍需求");
+  assert.equal(receivedSystemPrompts.some((prompt) => prompt.includes('"condition": "无障碍需求"') && prompt.includes('"details": "场地必须提供电梯"')), true);
 
   const participantView = await request(`/api/sessions/${sessionId}`, { token: p1a.token });
   assert.deepEqual(Object.keys(participantView.session.recaps), ["P1A"]);
   assert.equal(participantView.session.modelSnapshot, undefined);
+  assert.equal(participantView.session.profileSnapshot, undefined);
 
   const commented = await request(`/api/sessions/${sessionId}/messages/P1A_T1_1/comments`, {
     token: p1a.token,
