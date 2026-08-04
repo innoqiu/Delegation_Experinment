@@ -1,11 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
   "createdAt": "2026-08-03T07:58:30.017Z",
   "participants": {
     "P1A": {
       "id": "P1A",
       "firstLoginAt": "2026-08-03T08:34:57.934Z",
-      "lastLoginAt": "2026-08-03T13:34:20.047Z",
+      "lastLoginAt": "2026-08-03T14:14:17.480Z",
       "profiles": {
         "task1": {
           "interests": "1",
@@ -13,7 +13,8 @@
           "availability": "3",
           "boundaries": "4",
           "flexibility": "5",
-          "approvalRequirements": "6"
+          "approvalRequirements": "6",
+          "customFields": []
         },
         "task2": {
           "connectionTypes": [
@@ -32,9 +33,23 @@
           "disclosureAllowed": "3",
           "disclosureRestricted": "5",
           "relationshipBoundaries": "6",
-          "approvalRequirements": ""
+          "approvalRequirements": "",
+          "customFields": []
         },
-        "task3": {}
+        "task3": {
+          "resourceUse": "",
+          "preferredShare": "",
+          "minimumShare": "",
+          "urgencyDependencies": "",
+          "fairnessPrinciples": [],
+          "negotiableDimensions": "",
+          "acceptableCompensation": "",
+          "nonNegotiableConditions": "",
+          "disclosureAllowed": "",
+          "priorContributions": "",
+          "approvalRequirements": "",
+          "customFields": []
+        }
       },
       "updatedAt": "2026-08-03T08:35:21.452Z"
     },
@@ -42,7 +57,7 @@
       "id": "P0A",
       "isDummy": true,
       "firstLoginAt": "2026-08-03T08:54:55.516Z",
-      "lastLoginAt": "2026-08-03T13:53:08.517Z",
+      "lastLoginAt": "2026-08-04T12:20:36.228Z",
       "profiles": {
         "task1": {
           "interests": "当代艺术展览、城市散步、安静咖啡馆；偏好可聊天但不嘈杂的活动。",
@@ -50,7 +65,8 @@
           "availability": "本周六14:00–18:00；活动时长约2–3小时。",
           "boundaries": "不饮酒；避免高强度运动、过度拥挤场所和临时跨城出行。",
           "flexibility": "开始时间可前后调整30分钟；地点可在徐汇或静安之间协商；预算不超过每人150元。",
-          "approvalRequirements": "最终日期、地点、费用与任何预约均需本人批准；代理不得直接预订或付款。"
+          "approvalRequirements": "最终日期、地点、费用与任何预约均需本人批准；代理不得直接预订或付款。",
+          "customFields": []
         },
         "task2": {
           "connectionTypes": [
@@ -66,9 +82,27 @@
           "disclosureAllowed": "可以披露兴趣、研究方向、一般时间安排和社交节奏。",
           "disclosureRestricted": "不得披露住址、具体单位、收入、联系方式、健康信息或过往关系经历。",
           "relationshipBoundaries": "仅探索友谊或合作；不接受浪漫关系建议，也不代表本人承诺长期合作。",
-          "approvalRequirements": "关系路径建议、联系方式交换和第一次见面安排均需本人确认。"
+          "approvalRequirements": "关系路径建议、联系方式交换和第一次见面安排均需本人确认。",
+          "customFields": []
         },
-        "task3": {}
+        "task3": {
+          "resourceUse": "用于需要在本周完成的访谈材料整理与初步编码，希望减少后续返工。",
+          "preferredShare": 7,
+          "minimumShare": 3,
+          "urgencyDependencies": "本周末前需要形成初步主题，后续分析依赖这一步；低于3个额度将难以覆盖核心材料。",
+          "fairnessPrinciples": [
+            "need",
+            "urgency",
+            "efficiency"
+          ],
+          "negotiableDimensions": "可以把1至2个额度放入共同保留池，或在对方需求更紧急时接受分阶段使用。",
+          "acceptableCompensation": "若本轮少分配，可讨论下次同类资源优先，但必须由本人另行批准。",
+          "nonNegotiableConditions": "不得低于3个额度；代理不得承诺额外劳动或自动形成下一轮优先权。",
+          "disclosureAllowed": "可以说明截止时间、工作依赖和最低份额，但不披露具体访谈内容。",
+          "priorContributions": "上一次共同任务中承担了较多整理工作，可作为讨论背景，但不应自动决定本次结果。",
+          "approvalRequirements": "最终份额、任何补偿、未来优先权和新增义务均需本人批准。",
+          "customFields": []
+        }
       }
     },
     "P0B": {
@@ -83,7 +117,8 @@
           "availability": "本周六15:00–19:00；最晚19:30前结束。",
           "boundaries": "不吃辣；避免长时间户外暴晒、酒吧和需要提前支付高额费用的活动。",
           "flexibility": "可接受展览、书店或咖啡馆组合；时间可前后调整45分钟；预算不超过每人200元。",
-          "approvalRequirements": "最终活动组合、餐饮选择、预算和预约均需本人批准；代理只能提出候选方案。"
+          "approvalRequirements": "最终活动组合、餐饮选择、预算和预约均需本人批准；代理只能提出候选方案。",
+          "customFields": []
         },
         "task2": {
           "connectionTypes": [
@@ -100,9 +135,27 @@
           "disclosureAllowed": "可以披露兴趣、技能方向、作品类型、一般时间安排和希望获得的支持。",
           "disclosureRestricted": "不得披露客户名称、未公开项目、家庭信息、住址、收入或私人联系方式。",
           "relationshipBoundaries": "可以探索友谊、导师或短期合作；不探索浪漫关系，不接受代理承诺无期限合作。",
-          "approvalRequirements": "具体关系路径、项目投入、联系方式交换和后续会面均需本人确认。"
+          "approvalRequirements": "具体关系路径、项目投入、联系方式交换和后续会面均需本人确认。",
+          "customFields": []
         },
-        "task3": {}
+        "task3": {
+          "resourceUse": "用于制作本月演示原型并完成可用性测试准备，资源不足会压缩测试轮次。",
+          "preferredShare": 7,
+          "minimumShare": 4,
+          "urgencyDependencies": "原型需要先完成才能安排参与者测试；若少于4个额度，只能交付简化版本。",
+          "fairnessPrinciples": [
+            "contribution",
+            "reciprocity",
+            "efficiency"
+          ],
+          "negotiableDimensions": "可以接受6个额度，或接受5个额度加1个双方共同使用的支持额度。",
+          "acceptableCompensation": "可接受对方在本轮获得更多额度，但希望共同保留额度优先支持两边都依赖的工作；其他补偿需本人批准。",
+          "nonNegotiableConditions": "不得低于4个额度；不得以未授权的未来工作交换本轮资源。",
+          "disclosureAllowed": "可以披露交付节点、测试依赖和可接受的简化方案，不披露未公开的项目细节。",
+          "priorContributions": "此前承担过原型搭建，希望贡献被纳入公平讨论，但不主张因此获得固定份额。",
+          "approvalRequirements": "最终份额、共同保留额度用途、补偿和任何未来安排均需本人确认。",
+          "customFields": []
+        }
       }
     }
   },
@@ -111,13 +164,15 @@
       "baseUrl": "https://api.deepseek.com",
       "apiKey": "",
       "model": "deepseek-v4-flash",
-      "temperature": 0.6
+      "temperature": 0.6,
+      "hasApiKey": false
     },
     "agent2": {
       "baseUrl": "https://api.deepseek.com",
       "apiKey": "",
       "model": "deepseek-v4-flash",
-      "temperature": 0.6
+      "temperature": 0.6,
+      "hasApiKey": false
     },
     "tasks": {
       "task1": {
@@ -137,12 +192,12 @@
         "recapPrompt": "为当前principal生成一份独立、面向人类判断的中文recap。不得把关系推荐描述成已经建立的关系，也不得添加transcript中没有的身份或动机。使用以下结构：\n\n## 潜在关系路径建议\n- 可考虑的路径：友谊／浪漫／导师／合作／保持开放／暂不继续\n- 建议强度与不确定性\n\n## 建议依据与来源\n- 哪些信息由哪位principal明确提供\n- 哪些只是代理在互动中形成的暂时推断\n\n## 可能的契合点\n- 兴趣、需求、性格描述、社交节奏或时间条件的对齐\n\n## 差异、边界与风险\n- 不匹配、选择性披露限制、关系边界或授权限制\n\n## 第一次直接互动条件\n- 适合的形式、时间、地点、节奏及双方条件\n\n## 未决问题\n- 需要本人进一步了解、核实或直接讨论的事项\n\n## 需要你采取的行动\n- 明确列出应接受探索、修改条件、拒绝或保持开放的选择"
       },
       "task3": {
-        "enabled": false,
-        "label": "Profile 3（待定义）",
+        "enabled": true,
+        "label": "共享资源分配",
         "maxRounds": 10,
         "completionPhrase": "我认为任务已完成申请结束",
-        "systemPrompt": "",
-        "recapPrompt": ""
+        "systemPrompt": "你是代表一位具体参与者的共享资源分配代理。你正在与另一位参与者的代理协商如何分配固定的10个共享支持额度；额度可以代表时间、算力、助理支持或其他同质且稀缺的共同资源。\n目标：在各自授权范围内，澄清双方的用途、理想份额、最低可接受份额、紧迫性、公平依据和边界，通过提议、回应、条件化让步或保留分歧，形成一个供双方本人审核的临时分配方案。\n行为要求：\n1. 只把参与者配置中明确提供的内容当作事实，不得编造需求、贡献、紧迫性、偏好或授权。\n2. 明确区分理想份额、最低可接受份额与不可协商条件；不得把偏好表述成已获授权的底线，也不得为了达成一致而越过底线。\n3. 只披露与分配判断相关且被允许披露的信息。可以概括敏感理由，但不得猜测、补全或要求与任务无关的个人信息。\n4. 每个完整方案都必须满足“代理1份额 + 代理2份额 + 共同保留额度 = 10”。共同保留额度可以为0；若只提出局部调整，必须明确它尚不是完整方案。\n5. 对每项主张或条件保留来源：说明它来自哪一方的配置、由哪一代理提出，以及对方是接受、拒绝、修改还是尚未回应。\n6. 让步必须写清数量、触发条件、补偿和持续时间。未经明确授权，不得新增未来优先权、持续性互惠、额外劳动或其他对principal有约束力的义务。\n7. 可以依据平等、需要、贡献、紧迫性、互惠、整体效率或轮流优先解释方案，但不得把任何公平原则冒充为双方已经共同认可。\n8. 不强迫达成一致。若授权范围不重叠、信息不足或条件冲突，应保留僵局、备选方案和需要本人处理的问题。\n9. 所有结果都是待双方本人批准的临时方案；代理不得宣称分配已经生效。\n10. 每次只发送一条简洁、自然的对话发言，不输出分析过程、JSON或面向研究者的说明。\n当你认为已经形成最佳可行临时方案，或继续协商无法改善结果时，在最后一行原样发送：我认为任务已完成申请结束",
+        "recapPrompt": "为当前principal生成一份独立、面向人类审核的中文recap。不得把代理形成的方案描述成已经生效的分配，也不得把未获授权的补偿或未来义务写成承诺。使用以下结构：\n\n## 临时分配方案\n- 明确列出双方份额与共同保留额度；三者必须合计为10\n- 标明方案是待双方本人批准、部分一致，还是尚未形成共同方案\n\n## 双方需求与信息来源\n- 说明关键用途、理想份额、最低份额和紧迫性分别来自哪位principal的配置或哪次代理发言\n- 区分明确资料、代理提议与代理推断\n\n## 协商形成过程\n- 按顺序概括关键提议、反提议、接受、拒绝、修改与未回应事项\n- 说明哪些互动使方案发生变化\n\n## 公平依据与取舍\n- 双方援引或接受了哪些公平原则\n- 哪些利益被优先、折中或暂时搁置，以及仍存在的分歧\n\n## 条件、补偿与未来义务\n- 列出每项条件或补偿的提出者、接受状态、持续时间和触发条件\n- 标记任何可能创造未来期待或义务的内容\n\n## 授权与边界\n- 哪些内容位于双方明确授权内\n- 哪些内容接近、超出或无法从配置判断其授权范围\n\n## 未决问题\n- 信息缺口、条件冲突、备选方案或必须由双方直接讨论的事项\n\n## 需要你采取的行动\n- 明确列出应批准、修改、拒绝、核实或与对方本人重新协商的内容"
       }
     }
   },
@@ -429,5 +484,277 @@
         }
       }
     }
-  ]
+  ],
+  "profileSchemas": {
+    "task1": {
+      "title": "社交计划",
+      "description": "描述你愿意参与怎样的社交活动，以及代理必须遵守的时间、地点与边界。",
+      "fields": [
+        {
+          "key": "interests",
+          "label": "兴趣与活动偏好",
+          "hint": "例如展览、运动、桌游、散步",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "locations",
+          "label": "地点偏好",
+          "hint": "可接受区域、交通或场地要求",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "availability",
+          "label": "可用时间",
+          "hint": "具体日期、时间段及持续时间",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "boundaries",
+          "label": "边界与不可接受项",
+          "hint": "代理不得越过的活动、地点、话题或条件",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "flexibility",
+          "label": "可协商范围",
+          "hint": "哪些条件可以让步，优先顺序是什么",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "approvalRequirements",
+          "label": "需要本人批准的事项",
+          "hint": "例如最终时间、预订、费用或出席承诺",
+          "type": "textarea",
+          "wide": false
+        }
+      ]
+    },
+    "task2": {
+      "title": "新关系介绍",
+      "description": "定义你希望探索的关系、选择性披露范围，以及第一次直接互动的条件。",
+      "fields": [
+        {
+          "key": "connectionTypes",
+          "label": "愿意探索的关系路径",
+          "hint": "可多选",
+          "type": "multiselect",
+          "wide": true,
+          "options": [
+            {
+              "value": "friendship",
+              "label": "友谊"
+            },
+            {
+              "value": "romance",
+              "label": "浪漫关系"
+            },
+            {
+              "value": "mentor",
+              "label": "导师关系"
+            },
+            {
+              "value": "collaboration",
+              "label": "合作关系"
+            },
+            {
+              "value": "open",
+              "label": "保持开放"
+            }
+          ]
+        },
+        {
+          "key": "interests",
+          "label": "兴趣与匹配方向",
+          "hint": "希望通过哪些兴趣、议题或活动建立联系",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "socialPace",
+          "label": "社交节奏",
+          "hint": "偏好的联系频率、交流强度与熟悉速度",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "availability",
+          "label": "时间与可用性",
+          "hint": "可用于初次接触的时间与时长",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "needs",
+          "label": "希望从关系中获得什么",
+          "hint": "陪伴、建议、共同活动、合作或其他期待",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "personality",
+          "label": "如何描述自己",
+          "hint": "希望代理如何介绍你的互动风格",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "firstMeetingConditions",
+          "label": "第一次见面的条件",
+          "hint": "形式、地点、时长、退出方式等",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "disclosureAllowed",
+          "label": "允许代理披露的信息",
+          "hint": "代理可以主动告诉对方的资料",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "disclosureRestricted",
+          "label": "限制披露的信息",
+          "hint": "不得披露或必须先征得本人同意的信息",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "relationshipBoundaries",
+          "label": "关系边界",
+          "hint": "不考虑的关系路径或不可接受的推进方式",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "approvalRequirements",
+          "label": "需要本人批准的事项",
+          "hint": "关系建议、联系方式交换和会面安排等",
+          "type": "text",
+          "wide": true
+        }
+      ]
+    },
+    "task3": {
+      "title": "共享资源分配",
+      "description": "说明你对10个共享支持额度的用途、理想份额、最低需求、公平判断与授权边界。",
+      "fields": [
+        {
+          "key": "resourceUse",
+          "label": "资源的主要用途",
+          "hint": "你希望额度支持什么事项，以及为什么重要",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "preferredShare",
+          "label": "理想份额",
+          "hint": "请选择6–8个额度，以形成可比较的稀缺条件",
+          "type": "number",
+          "wide": false,
+          "min": 6,
+          "max": 8
+        },
+        {
+          "key": "minimumShare",
+          "label": "最低可接受份额",
+          "hint": "请选择2–5个额度；低于此数应保留为未解决分歧",
+          "type": "number",
+          "wide": false,
+          "min": 2,
+          "max": 5
+        },
+        {
+          "key": "urgencyDependencies",
+          "label": "紧迫性与依赖关系",
+          "hint": "少拿资源会产生什么影响，是否有截止时间或先后依赖",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "fairnessPrinciples",
+          "label": "倾向的公平原则",
+          "hint": "代理可以据此解释分配主张；可多选",
+          "type": "multiselect",
+          "wide": true,
+          "options": [
+            {
+              "value": "equal",
+              "label": "平均分配"
+            },
+            {
+              "value": "need",
+              "label": "按需要"
+            },
+            {
+              "value": "contribution",
+              "label": "按贡献"
+            },
+            {
+              "value": "urgency",
+              "label": "按紧迫性"
+            },
+            {
+              "value": "reciprocity",
+              "label": "互惠补偿"
+            },
+            {
+              "value": "efficiency",
+              "label": "整体效率"
+            },
+            {
+              "value": "rotation",
+              "label": "轮流优先"
+            }
+          ]
+        },
+        {
+          "key": "negotiableDimensions",
+          "label": "可协商范围",
+          "hint": "数量、使用顺序、共同储备或其他可让步条件",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "acceptableCompensation",
+          "label": "可接受的补偿或互惠",
+          "hint": "例如未来优先权、额外协助；不填写则代理不得自行创造",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "nonNegotiableConditions",
+          "label": "不可接受的条件",
+          "hint": "代理不得接受的份额、交换或新增义务",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "disclosureAllowed",
+          "label": "允许披露的理由",
+          "hint": "代理可以向对方解释哪些需求、紧迫性或既往投入",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "priorContributions",
+          "label": "既往贡献或失衡（可选）",
+          "hint": "是否存在应被考虑的既往投入、让步或未解决的不平衡",
+          "type": "textarea",
+          "wide": false
+        },
+        {
+          "key": "approvalRequirements",
+          "label": "需要本人批准的事项",
+          "hint": "最终份额、补偿、未来优先权及任何新增义务",
+          "type": "textarea",
+          "wide": true
+        }
+      ]
+    }
+  }
 }

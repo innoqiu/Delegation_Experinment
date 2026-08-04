@@ -5,8 +5,15 @@ import SessionTranscript from "../components/SessionTranscript.jsx";
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "generating_recaps"]);
 
-function ParticipantSummary({ title, id, profile }) {
-  const entries = Object.entries(profile || {}).filter(([, value]) => Array.isArray(value) ? value.length : String(value || "").trim()).slice(0, 5);
+function ParticipantSummary({ title, id, profile, schema }) {
+  const entries = (schema?.fields || []).flatMap((field) => {
+    const value = profile?.[field.key];
+    if (Array.isArray(value) ? !value.length : !String(value ?? "").trim()) return [];
+    const displayValue = field.type === "multiselect"
+      ? value.map((item) => field.options?.find((option) => option.value === item)?.label || item).join("、")
+      : value;
+    return [[field.label, displayValue]];
+  }).slice(0, 5);
   return (
     <section className="agent-summary">
       <h2>{title}</h2>
@@ -24,16 +31,18 @@ export default function InteractionPage({ user, notify }) {
   const [session, setSession] = useState(null);
   const [starting, setStarting] = useState(false);
   const [tasks, setTasks] = useState({});
+  const [schemas, setSchemas] = useState({});
   const transcriptEnd = useRef(null);
 
   useEffect(() => {
-    Promise.all([api("/api/participants"), api("/api/model-config"), api("/api/sessions")])
-      .then(([participantResult, configResult, sessionResult]) => {
+    Promise.all([api("/api/participants"), api("/api/model-config"), api("/api/sessions"), api("/api/profile-schemas")])
+      .then(([participantResult, configResult, sessionResult, schemaResult]) => {
         const list = participantResult.participants;
         setParticipants(list);
         setParticipantA(list[0]?.id || "");
         setParticipantB(list[1]?.id || "");
         setTasks(configResult.modelConfig.tasks || {});
+        setSchemas(schemaResult.profileSchemas || {});
         const recent = sessionResult.sessions.find((item) => ACTIVE_STATUSES.has(item.status)) || sessionResult.sessions[0];
         if (recent) {
           api(`/api/sessions/${recent.id}`).then(({ session: detail }) => {
@@ -98,7 +107,7 @@ export default function InteractionPage({ user, notify }) {
           <select className="select" value={participantA} disabled={active} onChange={(event) => setParticipantA(event.target.value)}>
             <option value="">选择受试者</option>{participants.map((participant) => <option key={participant.id}>{participant.id}</option>)}
           </select>
-          <ParticipantSummary title="左侧代理" id={participantA} profile={taskProfileA} />
+          <ParticipantSummary title="左侧代理" id={participantA} profile={taskProfileA} schema={schemas[selectedTask]} />
         </div>
         <div className="session-status-panel">
           <span className={`status-dot status-${session?.status || "idle"}`} />
@@ -115,7 +124,7 @@ export default function InteractionPage({ user, notify }) {
           <select className="select" value={participantB} disabled={active} onChange={(event) => setParticipantB(event.target.value)}>
             <option value="">选择受试者</option>{participants.filter((participant) => participant.id !== participantA).map((participant) => <option key={participant.id}>{participant.id}</option>)}
           </select>
-          <ParticipantSummary title="右侧代理" id={participantB} profile={taskProfileB} />
+          <ParticipantSummary title="右侧代理" id={participantB} profile={taskProfileB} schema={schemas[selectedTask]} />
         </div>
       </div>
 

@@ -2,6 +2,7 @@ import { Icon } from "./Icons.jsx";
 
 const NAV = [
   { id: "profiles", label: "Agent配置", icon: "profiles" },
+  { id: "schemas", label: "Profile结构", icon: "schema", admin: true },
   { id: "models", label: "模型配置", icon: "models", admin: true },
   { id: "interaction", label: "交互", icon: "interaction", admin: true },
   { id: "recaps", label: "Recap", icon: "recaps" },

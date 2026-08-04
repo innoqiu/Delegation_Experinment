@@ -108,6 +108,29 @@ p { color: var(--muted); line-height: 1.55; }
 .custom-field-delete:hover { color: var(--red); border-color: #e4a09d; }
 .custom-fields-empty { padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 5px; color: var(--faint); background: #fafbfc; font-size: 12px; }
 
+.schema-notice { display: flex; align-items: center; gap: 14px; padding: 13px 15px; border: 1px solid #bfd0f4; border-radius: var(--radius); background: var(--blue-soft); font-size: 12px; }
+.schema-notice strong { flex: 0 0 auto; color: var(--blue); }
+.schema-notice span { color: #4c5870; line-height: 1.5; }
+.schema-editor-body { display: grid; gap: 22px; padding: 22px 24px 26px; }
+.schema-title-row { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(360px, 1.35fr); gap: 18px; }
+.schema-title-row .textarea { min-height: 78px; }
+.schema-list-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding-top: 2px; }
+.schema-list-heading h2 { margin-bottom: 3px; font-size: 16px; }
+.schema-list-heading p { margin: 0; font-size: 12px; }
+.schema-fields-list { display: grid; gap: 11px; }
+.schema-field-card { display: grid; grid-template-columns: 96px minmax(0, 1fr) 36px; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: #fbfcfe; }
+.schema-field-index { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
+.schema-field-index span { color: var(--blue); font-size: 18px; font-weight: 750; }
+.schema-field-index code { color: var(--faint); font-size: 10px; overflow-wrap: anywhere; }
+.schema-field-main { display: grid; gap: 12px; }
+.schema-field-grid { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, .5fr); gap: 13px 16px; }
+.schema-wide-toggle { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.schema-wide-toggle input { accent-color: var(--blue); }
+.schema-field-actions { display: grid; align-content: start; gap: 7px; }
+.schema-field-actions .icon-button:disabled { opacity: .35; cursor: not-allowed; }
+.danger-icon { color: var(--red); }
+.danger-icon:hover { color: var(--red); border-color: #e4a09d; }
+
 .endpoint-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .endpoint-panel, .task-editor { border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
 .endpoint-panel { padding: 19px; }
@@ -304,6 +327,11 @@ p { color: var(--muted); line-height: 1.55; }
   .custom-fields-heading { flex-direction: column; }
   .custom-field-row { grid-template-columns: 1fr; }
   .custom-field-delete { width: 100%; margin-top: 0; }
+  .schema-notice, .schema-list-heading { align-items: flex-start; flex-direction: column; }
+  .schema-title-row, .schema-field-card, .schema-field-grid { grid-template-columns: 1fr; }
+  .schema-field-index { flex-direction: row; align-items: center; }
+  .schema-field-actions { grid-template-columns: repeat(3, 1fr); }
+  .schema-field-actions .icon-button { width: 100%; }
   .span-two { grid-column: auto; }
   .interaction-top { grid-template-columns: 1fr; }
   .agent-column:first-child, .agent-column:last-child { border: 0; border-bottom: 1px solid var(--border); }

@@ -86,6 +86,16 @@ async function login(id) {
   return request("/api/login", { method: "POST", body: { id } });
 }
 
+async function waitForSession(id, token) {
+  let session;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    ({ session } = await request(`/api/sessions/${id}`, { token }));
+    if (["completed", "completed_with_errors", "failed"].includes(session.status)) return session;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+  throw new Error(`Session ${id} did not finish in time`);
+}
+
 try {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     try { await request("/api/health"); break; }
@@ -98,6 +108,14 @@ try {
   assert.equal(p1a.user.id, "P1A");
   assert.equal(p1a.user.role, "participant");
 
+  const participantSchemas = await request("/api/profile-schemas", { token: p1a.token });
+  assert.equal(participantSchemas.profileSchemas.task3.title, "共享资源分配");
+  assert.equal(participantSchemas.profileSchemas.task3.fields.some(({ key }) => key === "minimumShare"), true);
+  await request("/api/profile-schemas", { token: p1a.token, method: "PUT", body: participantSchemas, expected: 403 });
+  participantSchemas.profileSchemas.task3.fields.push({ key: "testCondition", label: "实验附加条件", hint: "用于验证动态固定问题", type: "textarea", wide: true });
+  const updatedSchemas = await request("/api/profile-schemas", { token: admin.token, method: "PUT", body: participantSchemas });
+  assert.equal(updatedSchemas.profileSchemas.task3.fields.at(-1).key, "testCondition");
+
   const seededParticipants = await request("/api/participants", { token: admin.token });
   assert.equal(seededParticipants.participants.some(({ id }) => id === "P0A"), true);
   assert.equal(seededParticipants.participants.some(({ id }) => id === "P0B"), true);
@@ -105,16 +123,25 @@ try {
   assert.equal(dummyProfile.participant.isDummy, true);
   assert.notEqual(dummyProfile.participant.profiles.task1.interests, "");
   assert.notEqual(dummyProfile.participant.profiles.task2.needs, "");
+  assert.notEqual(dummyProfile.participant.profiles.task3.resourceUse, "");
 
   const ownProfile = await request("/api/profiles/P1A", { token: p1a.token });
   ownProfile.participant.profiles.task1.interests = "展览与散步";
   ownProfile.participant.profiles.task1.customFields = [{ id: "accessibility", label: "无障碍需求", value: "场地必须提供电梯" }];
+  ownProfile.participant.profiles.task3.resourceUse = "用于完成访谈分析";
+  ownProfile.participant.profiles.task3.preferredShare = 7;
+  ownProfile.participant.profiles.task3.minimumShare = 3;
+  ownProfile.participant.profiles.task3.fairnessPrinciples = ["need", "urgency"];
+  ownProfile.participant.profiles.task3.testCondition = "仅接受待本人批准的方案";
   await request("/api/profiles/P1A", { token: p1a.token, method: "PUT", body: { profiles: ownProfile.participant.profiles } });
   const savedProfile = await request("/api/profiles/P1A", { token: p1a.token });
   assert.deepEqual(savedProfile.participant.profiles.task1.customFields, [{ id: "accessibility", label: "无障碍需求", value: "场地必须提供电梯" }]);
   await request("/api/profiles/P1B", { token: p1a.token, expected: 403 });
 
   const modelResult = await request("/api/model-config", { token: admin.token });
+  assert.equal(modelResult.modelConfig.tasks.task3.enabled, true);
+  assert.equal(modelResult.modelConfig.tasks.task3.systemPrompt.includes("固定的10个共享支持额度"), true);
+  assert.equal(modelResult.modelConfig.tasks.task3.recapPrompt.includes("## 临时分配方案"), true);
   modelResult.modelConfig.agent1 = { baseUrl: `http://127.0.0.1:${mockPort}/v1`, apiKey: "test", model: "mock-model", temperature: 0 };
   modelResult.modelConfig.agent2 = { baseUrl: `http://127.0.0.1:${mockPort}/v1`, apiKey: "test", model: "mock-model", temperature: 0 };
   await request("/api/model-config", { token: admin.token, method: "PUT", body: modelResult });
@@ -128,12 +155,7 @@ try {
     body: { participantA: "P1A", participantB: "P1B", task: "task1" },
   });
   const sessionId = created.session.id;
-  let session;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    ({ session } = await request(`/api/sessions/${sessionId}`, { token: admin.token }));
-    if (["completed", "completed_with_errors", "failed"].includes(session.status)) break;
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
-  }
+  const session = await waitForSession(sessionId, admin.token);
   assert.equal(session.status, "completed", session.error || "session should complete");
   assert.equal(session.transcript.length, 2);
   assert.equal(session.transcript[0].messageId, "P1A_T1_1");
@@ -148,6 +170,7 @@ try {
   assert.deepEqual(Object.keys(participantView.session.recaps), ["P1A"]);
   assert.equal(participantView.session.modelSnapshot, undefined);
   assert.equal(participantView.session.profileSnapshot, undefined);
+  assert.equal(participantView.session.profileSchemaSnapshot, undefined);
 
   const commented = await request(`/api/sessions/${sessionId}/messages/P1A_T1_1/comments`, {
     token: p1a.token,
@@ -163,14 +186,27 @@ try {
   });
   assert.equal(decision.recap.decision.value, "approved");
 
+  const task3Created = await request("/api/sessions", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { participantA: "P1A", participantB: "P1B", task: "task3" },
+  });
+  const task3Session = await waitForSession(task3Created.session.id, admin.token);
+  assert.equal(task3Session.status, "completed", task3Session.error || "Task 3 should complete");
+  assert.equal(task3Session.transcript[0].messageId, "P1A_T3_1");
+  assert.equal(task3Session.profileSchemaSnapshot.fields.some(({ key }) => key === "testCondition"), true);
+  assert.equal(receivedSystemPrompts.some((prompt) => prompt.includes("固定的10个共享支持额度") && prompt.includes("实验附加条件") && prompt.includes("仅接受待本人批准的方案")), true);
+
   const history = await request("/api/sessions", { token: admin.token });
-  assert.equal(history.sessions.length, 1);
+  assert.equal(history.sessions.length, 2);
   await request(`/api/sessions/${sessionId}`, { token: p1a.token, method: "DELETE", expected: 403 });
   const deleted = await request(`/api/sessions/${sessionId}`, { token: admin.token, method: "DELETE" });
   assert.equal(deleted.ok, true);
+  await request(`/api/sessions/${task3Created.session.id}`, { token: admin.token, method: "DELETE" });
   const emptyHistory = await request("/api/sessions", { token: admin.token });
   assert.equal(emptyHistory.sessions.length, 0);
-  console.log("Smoke test passed: auth, permissions, profiles, model test, dual-agent run, IDs, recaps, comments, decisions, history, admin deletion.");
+  console.log("Smoke test passed: auth, profile-schema permissions/editing, Task 3 profiles/prompts/recaps, snapshots, dual-agent runs, comments, decisions, history, and admin deletion.");
 } finally {
   await close(appServer);
   await close(mock);

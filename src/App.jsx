@@ -3,13 +3,14 @@ import { api, getToken, setToken } from "./api.js";
 import AppShell from "./components/AppShell.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import AgentConfigPage from "./pages/AgentConfigPage.jsx";
+import ProfileSchemaPage from "./pages/ProfileSchemaPage.jsx";
 import ModelConfigPage from "./pages/ModelConfigPage.jsx";
 import InteractionPage from "./pages/InteractionPage.jsx";
 import RecapPage from "./pages/RecapPage.jsx";
 import HistoryPage from "./pages/HistoryPage.jsx";
 
 const PARTICIPANT_PAGES = ["profiles", "recaps"];
-const ADMIN_PAGES = ["profiles", "models", "interaction", "recaps", "history"];
+const ADMIN_PAGES = ["profiles", "schemas", "models", "interaction", "recaps", "history"];
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -62,6 +63,7 @@ export default function App() {
   const pageProps = { user, notify };
   const content = {
     profiles: <AgentConfigPage {...pageProps} />,
+    schemas: <ProfileSchemaPage {...pageProps} />,
     models: <ModelConfigPage {...pageProps} />,
     interaction: <InteractionPage {...pageProps} />,
     recaps: <RecapPage {...pageProps} />,
