@@ -4,6 +4,20 @@ import { ChoiceGrid, Field, TextArea, TextInput } from "../components/FormContro
 import { Icon } from "../components/Icons.jsx";
 
 const TASK_KEYS = ["task1", "task2", "task3"];
+const STUDY_INTENT_PLACEHOLDERS = {
+  task1: {
+    authorizationIntent: "例如：可以替我筛选和比较计划，但最终地点、费用与预订必须由我确认。",
+    desiredUnderstanding: "例如：希望朋友理解我愿意参加活动，但比较在意安静环境和时间边界。",
+  },
+  task2: {
+    authorizationIntent: "例如：可以初步判断是否值得认识，但不能替我交换联系方式、答应见面或确定关系。",
+    desiredUnderstanding: "例如：希望对方理解我比较慢热，但愿意从共同兴趣开始逐步了解。",
+  },
+  task3: {
+    authorizationIntent: "例如：可以在不少于3个额度的前提下协商，但补偿或未来承诺必须由我确认。",
+    desiredUnderstanding: "例如：希望对方理解我的截止时间和最低需要，也知道我愿意讨论共同保留额度。",
+  },
+};
 
 function emptyProfiles(schemas = {}) {
   return Object.fromEntries(TASK_KEYS.map((task) => [task, {
@@ -25,7 +39,7 @@ function Section({ number, schema, children }) {
 }
 
 function SchemaField({ field, value, readOnly, onChange }) {
-  const common = { value: value ?? "", readOnly, onChange: (event) => onChange(event.target.value) };
+  const common = { value: value ?? "", readOnly, placeholder: field.placeholder || "", onChange: (event) => onChange(event.target.value) };
   let control;
   if (field.type === "multiselect") {
     control = <ChoiceGrid options={field.options || []} values={Array.isArray(value) ? value : []} onChange={onChange} disabled={readOnly} />;
@@ -68,16 +82,17 @@ function CustomProfileFields({ fields, readOnly, onAdd, onChange, onRemove }) {
   );
 }
 
-function StudyIntentFields({ value = {}, readOnly, onChange }) {
+function StudyIntentFields({ task, value = {}, readOnly, onChange }) {
+  const placeholders = STUDY_INTENT_PLACEHOLDERS[task] || {};
   return (
     <div className="study-intent-card">
       <div><span className="eyebrow">授权意图记录</span><h3>在代理开始交流前，明确你希望它做什么，以及希望对方如何理解你。</h3></div>
       <div className="form-grid two-columns">
         <Field label="本次授权意图" hint="你希望代理实现什么；哪些决定仍必须留给你本人">
-          <TextArea value={value.authorizationIntent || ""} onChange={(event) => onChange("authorizationIntent", event.target.value)} readOnly={readOnly} maxLength={5000} />
+          <TextArea value={value.authorizationIntent || ""} placeholder={placeholders.authorizationIntent} onChange={(event) => onChange("authorizationIntent", event.target.value)} readOnly={readOnly} maxLength={5000} />
         </Field>
         <Field label="希望对方如何理解我" hint="经过代理交流后，你希望对方形成怎样的准确理解">
-          <TextArea value={value.desiredUnderstanding || ""} onChange={(event) => onChange("desiredUnderstanding", event.target.value)} readOnly={readOnly} maxLength={5000} />
+          <TextArea value={value.desiredUnderstanding || ""} placeholder={placeholders.desiredUnderstanding} onChange={(event) => onChange("desiredUnderstanding", event.target.value)} readOnly={readOnly} maxLength={5000} />
         </Field>
       </div>
     </div>
@@ -208,7 +223,7 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
         <div className="profile-form">
           {visibleTasks.map((task) => (
             <Section key={task} number={TASK_KEYS.indexOf(task) + 1} schema={schemas[task]}>
-              <StudyIntentFields value={profiles[task]?.studyIntent} readOnly={readOnly} onChange={(key, value) => updateStudyIntent(task, key, value)} />
+              <StudyIntentFields task={task} value={profiles[task]?.studyIntent} readOnly={readOnly} onChange={(key, value) => updateStudyIntent(task, key, value)} />
               <div className="form-grid three-columns">
                 {schemas[task].fields.map((field) => (
                   <SchemaField key={field.key} field={field} value={profiles[task]?.[field.key]} readOnly={readOnly} onChange={(value) => update(task, field.key, value)} />

@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const chromePath = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const debugPort = 9337;
+const debugPort = 40_000 + Math.floor(Math.random() * 3_000);
 const appPort = 44_000 + Math.floor(Math.random() * 8_000);
 const adminCode = "browser-admin-code";
-const profileDir = mkdtempSync(join(tmpdir(), "proxylab-browser-"));
-const appDataDir = process.env.BROWSER_TEST_URL ? null : mkdtempSync(join(tmpdir(), "proxylab-browser-data-"));
+const profileDir = mkdtempSync(join(projectDir, ".proxylab-browser-"));
+const appDataDir = process.env.BROWSER_TEST_URL ? null : mkdtempSync(join(projectDir, ".proxylab-browser-data-"));
 const appUrl = process.env.BROWSER_TEST_URL || `http://127.0.0.1:${appPort}/`;
-const screenshotPath = process.env.BROWSER_SCREENSHOT_PATH || join(tmpdir(), "proxylab-consent-qa.png");
+const screenshotPath = process.env.BROWSER_SCREENSHOT_PATH || join(projectDir, "..", "proxylab-consent-qa.png");
+const profileScreenshotPath = process.env.BROWSER_PROFILE_SCREENSHOT_PATH || join(projectDir, "..", "proxylab-profile-qa.png");
 let appProcess;
 let chrome;
 
@@ -46,6 +46,8 @@ if (!process.env.BROWSER_TEST_URL) {
 chrome = spawn(chromePath, [
   "--headless=new",
   "--disable-gpu",
+  "--disable-extensions",
+  "--remote-allow-origins=*",
   "--no-first-run",
   "--window-size=1440,1000",
   `--remote-debugging-port=${debugPort}`,
@@ -82,7 +84,16 @@ async function connectPage() {
   function call(method, params = {}) {
     const id = ++callId;
     socket.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolvePromise, rejectPromise) => pending.set(id, { resolvePromise, rejectPromise }));
+    return new Promise((resolvePromise, rejectPromise) => {
+      const timeout = setTimeout(() => {
+        pending.delete(id);
+        rejectPromise(new Error(`Chrome DevTools call timed out: ${method}`));
+      }, 15_000);
+      pending.set(id, {
+        resolvePromise: (value) => { clearTimeout(timeout); resolvePromise(value); },
+        rejectPromise: (error) => { clearTimeout(timeout); rejectPromise(error); },
+      });
+    });
   }
   return { socket, call, events };
 }
@@ -135,18 +146,37 @@ try {
   await waitFor(() => evaluate(client.call, "![...document.querySelectorAll('button')].find((item) => item.innerText.includes('同意并进入研究')).disabled"), "Consent submit did not enable");
   await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.includes('同意并进入研究')).click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('授权意图记录')"), "Accepted participant did not enter the profile page");
+  const profileText = await evaluate(client.call, "document.body.innerText");
+  assert.match(profileText, /帮你和朋友们安排本周出游或聚会/);
+  assert.match(profileText, /帮你进行初步交友/);
+  assert.match(profileText, /本轮共10个相同的支持额度/);
+  assert.doesNotMatch(profileText, /允许代理披露的信息|限制披露的信息/);
+  assert.equal(await evaluate(client.call, "document.querySelector('[placeholder*=\"当代艺术展\"]') !== null"), true);
+  assert.equal(await evaluate(client.call, "document.querySelector('[placeholder=\"例如：7\"]')?.value"), "");
+  await evaluate(client.call, `(() => {
+    const field = document.querySelector('[placeholder*="当代艺术展"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(field, '周末去看展');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  assert.equal(await evaluate(client.call, "document.querySelector('[placeholder*=\"当代艺术展\"]')?.value"), "周末去看展");
+  const profileScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(profileScreenshotPath, Buffer.from(profileScreenshot.data, "base64"));
 
   await evaluate(client.call, "localStorage.clear(); location.href = '/admin'; true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('管理员登录')"), "Dedicated admin login page did not render");
   await evaluate(client.call, fillAndSubmitScript(adminCode));
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('模型配置')"), "Admin access-code login did not enter the admin shell");
+  await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.trim() === 'Profile结构').click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('输入框示例')"), "Admin Profile schema editor did not expose placeholder editing");
 
   const browserErrors = client.events.filter((event) => (
     event.method === "Runtime.exceptionThrown"
     || (event.method === "Log.entryAdded" && ["error", "warning"].includes(event.params?.entry?.level))
   ));
   assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}`);
-  console.log(`Browser smoke passed: first-login consent gate, mandatory confirmations, public admin-hint removal, and protected /admin login. Screenshot: ${screenshotPath}`);
+  console.log(`Browser smoke passed: consent gate, scenario-led Profile copy, empty placeholder examples, removed redundant disclosure fields, editable admin examples, and protected /admin login. Screenshots: ${screenshotPath}, ${profileScreenshotPath}`);
 } finally {
   try { await client?.call("Browser.close"); } catch { chrome?.kill(); }
   appProcess?.kill();

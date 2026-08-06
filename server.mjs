@@ -37,51 +37,54 @@ function emptyStudyIntent() {
 }
 
 const PROFILE_FIELD_TYPES = new Set(["text", "textarea", "number", "multiselect"]);
+const LEGACY_PROFILE_FIELD_KEYS = {
+  task1: new Set(["interests", "locations", "availability", "boundaries", "flexibility", "approvalRequirements"]),
+  task2: new Set(["connectionTypes", "interests", "socialPace", "availability", "needs", "personality", "firstMeetingConditions", "disclosureAllowed", "disclosureRestricted", "relationshipBoundaries", "approvalRequirements"]),
+  task3: new Set(["resourceUse", "preferredShare", "minimumShare", "urgencyDependencies", "fairnessPrinciples", "negotiableDimensions", "acceptableCompensation", "nonNegotiableConditions", "disclosureAllowed", "priorContributions", "approvalRequirements"]),
+};
 const DEFAULT_PROFILE_SCHEMAS = {
   task1: {
     title: "社交计划",
-    description: "描述你愿意参与怎样的社交活动，以及代理必须遵守的时间、地点与边界。",
+    description: "你正在配置一个帮你和朋友们安排本周出游或聚会的代理。配置完成后，它会与朋友们的代理商量活动、时间、地点和费用，并把候选计划交给你确认。",
     fields: [
-      { key: "interests", label: "兴趣与活动偏好", hint: "例如展览、运动、桌游、散步", type: "textarea" },
-      { key: "locations", label: "地点偏好", hint: "可接受区域、交通或场地要求", type: "textarea" },
-      { key: "availability", label: "可用时间", hint: "具体日期、时间段及持续时间", type: "textarea" },
-      { key: "boundaries", label: "边界与不可接受项", hint: "代理不得越过的活动、地点、话题或条件", type: "textarea" },
-      { key: "flexibility", label: "可协商范围", hint: "哪些条件可以让步，优先顺序是什么", type: "textarea" },
-      { key: "approvalRequirements", label: "需要本人批准的事项", hint: "例如最终时间、预订、费用或出席承诺", type: "textarea" },
+      { key: "interests", label: "兴趣与活动偏好", hint: "写下你想参加或愿意尝试的活动，以及偏好的氛围。", placeholder: "例如：当代艺术展、城市散步；偏好可以聊天但不嘈杂的活动。或者：偏好户外运动和轻松聚餐。", type: "textarea" },
+      { key: "locations", label: "地点与交通偏好", hint: "说明可以接受的区域、通勤距离或场地条件。", placeholder: "例如：地铁30分钟内可达；优先市中心；不接受需要长距离步行的地点。", type: "textarea" },
+      { key: "availability", label: "本周可用时间", hint: "尽量写明日期、时间段和最长活动时长。", placeholder: "例如：本周六14:00–18:00，活动最好不超过3小时；周日不可用。", type: "textarea" },
+      { key: "boundaries", label: "不能接受的安排", hint: "列出代理必须遵守的活动、地点、饮食、费用或其他边界。", placeholder: "例如：不饮酒；不去过度拥挤的场所；人均费用不超过200元。", type: "textarea" },
+      { key: "flexibility", label: "哪些条件可以调整", hint: "说明可以让步的事项和优先保留的事项。", placeholder: "例如：开始时间可前后调整30分钟，地点可以协商，但预算上限不能变。", type: "textarea" },
+      { key: "approvalRequirements", label: "哪些事项必须由你确认", hint: "说明代理可以商量到什么程度，哪些决定不能替你做。", placeholder: "例如：代理可以提出候选方案；最终地点、费用、预订和是否出席必须由我确认。", type: "textarea" },
     ],
   },
   task2: {
     title: "新关系介绍",
-    description: "定义你希望探索的关系、选择性披露范围，以及第一次直接互动的条件。",
+    description: "你正在配置一个帮你进行初步交友的代理。它会与同城其他人的代理交流，了解彼此是否适合进一步认识，并为友谊、导师、合作或浪漫关系提出谨慎的下一步建议。",
     fields: [
-      { key: "connectionTypes", label: "愿意探索的关系路径", hint: "可多选", type: "multiselect", wide: true, options: [
+      { key: "connectionTypes", label: "你愿意探索哪些关系", hint: "可多选；代理只会推荐是否值得进一步认识，不会替你建立关系。", type: "multiselect", wide: true, options: [
         { value: "friendship", label: "友谊" },
         { value: "romance", label: "浪漫关系" },
         { value: "mentor", label: "导师关系" },
         { value: "collaboration", label: "合作关系" },
         { value: "open", label: "保持开放" },
       ] },
-      { key: "interests", label: "兴趣与匹配方向", hint: "希望通过哪些兴趣、议题或活动建立联系", type: "textarea" },
-      { key: "socialPace", label: "社交节奏", hint: "偏好的联系频率、交流强度与熟悉速度", type: "textarea" },
-      { key: "availability", label: "时间与可用性", hint: "可用于初次接触的时间与时长", type: "textarea" },
-      { key: "needs", label: "希望从关系中获得什么", hint: "陪伴、建议、共同活动、合作或其他期待", type: "textarea" },
-      { key: "personality", label: "如何描述自己", hint: "希望代理如何介绍你的互动风格", type: "textarea" },
-      { key: "firstMeetingConditions", label: "第一次见面的条件", hint: "形式、地点、时长、退出方式等", type: "textarea" },
-      { key: "disclosureAllowed", label: "允许代理披露的信息", hint: "代理可以主动告诉对方的资料", type: "textarea" },
-      { key: "disclosureRestricted", label: "限制披露的信息", hint: "不得披露或必须先征得本人同意的信息", type: "textarea" },
-      { key: "relationshipBoundaries", label: "关系边界", hint: "不考虑的关系路径或不可接受的推进方式", type: "textarea" },
-      { key: "approvalRequirements", label: "需要本人批准的事项", hint: "关系建议、联系方式交换和会面安排等", type: "text", wide: true },
+      { key: "interests", label: "希望通过什么产生连接", hint: "写下你愿意共同讨论、学习或参与的兴趣与活动。", placeholder: "例如：HCI、摄影、城市文化；希望认识能一起看展或交流研究方法的人。", type: "textarea" },
+      { key: "socialPace", label: "你舒服的社交节奏", hint: "说明联系频率、交流强度和熟悉速度。", placeholder: "例如：偏慢热，先进行一次有明确主题的短交流，再决定是否增加联系。", type: "textarea" },
+      { key: "availability", label: "初次接触的可用时间", hint: "写明可用时段和你愿意投入的时长。", placeholder: "例如：周末下午或工作日19:00后；第一次交流最多60分钟。", type: "textarea" },
+      { key: "needs", label: "你希望这段关系带来什么", hint: "可写陪伴、建议、共同活动、学习支持或合作机会。", placeholder: "例如：寻找能一起参加文化活动的朋友，或能交流研究与职业经验的导师。", type: "textarea" },
+      { key: "personality", label: "你希望代理怎样介绍你", hint: "描述你的互动方式，而不是给自己贴抽象标签。", placeholder: "例如：我比较慢热、守时，熟悉后愿意主动分享想法，但不喜欢被连续追问私事。", type: "textarea" },
+      { key: "firstMeetingConditions", label: "第一次直接接触的条件", hint: "说明形式、地点、时长及让你感到安全舒适的安排。", placeholder: "例如：先线上聊30分钟，或白天在公共场所见面；不默认交换私人联系方式。", type: "textarea" },
+      { key: "relationshipBoundaries", label: "不希望怎样推进关系", hint: "写明不考虑的关系类型、话题或推进方式。", placeholder: "例如：只探索友谊或合作；不接受浪漫关系建议，也不希望代理承诺长期投入。", type: "textarea" },
+      { key: "approvalRequirements", label: "哪些下一步必须由你确认", hint: "说明代理可以推荐什么，哪些行动必须先问你。", placeholder: "例如：是否继续认识、交换联系方式、安排见面和确定关系方向都必须由我确认。", type: "text", wide: true },
     ],
   },
   task3: {
-    title: "共享资源分配",
-    description: "说明你对10个共享支持额度的用途、理想份额、最低需求、公平判断与授权边界。",
+    title: "共享支持额度协商",
+    description: "你和另一位参与者需要分配本轮共10个相同的支持额度。每个额度可代表1小时助理协助、1个算力时段或1份项目支持（实验中双方含义相同）。你的代理会说明需求、协商数字与条件，并把临时方案交给你确认。",
     fields: [
-      { key: "resourceUse", label: "资源的主要用途", hint: "你希望额度支持什么事项，以及为什么重要", type: "textarea" },
-      { key: "preferredShare", label: "理想份额", hint: "请选择6–8个额度，以形成可比较的稀缺条件", type: "number", min: 6, max: 8 },
-      { key: "minimumShare", label: "最低可接受份额", hint: "请选择2–5个额度；低于此数应保留为未解决分歧", type: "number", min: 2, max: 5 },
-      { key: "urgencyDependencies", label: "紧迫性与依赖关系", hint: "少拿资源会产生什么影响，是否有截止时间或先后依赖", type: "textarea" },
-      { key: "fairnessPrinciples", label: "倾向的公平原则", hint: "代理可以据此解释分配主张；可多选", type: "multiselect", wide: true, options: [
+      { key: "resourceUse", label: "你想用额度完成什么", hint: "说明要支持的具体事项，以及额度能带来什么帮助。", placeholder: "例如：用于本周整理访谈材料；每个额度约能处理一部分材料，额度不足会留下返工。", type: "textarea" },
+      { key: "preferredShare", label: "你希望获得多少个额度", hint: "请填写6–8；这是理想目标，不等于不可退让的底线。", placeholder: "例如：7", type: "number", min: 6, max: 8 },
+      { key: "minimumShare", label: "至少需要多少个额度", hint: "请填写2–5；低于这个数时，代理应保留分歧而不是替你接受。", placeholder: "例如：3", type: "number", min: 2, max: 5 },
+      { key: "urgencyDependencies", label: "为什么这次需要这些额度", hint: "说明截止时间、工作依赖，以及少拿额度的具体影响。", placeholder: "例如：周五前必须完成第一步，后续工作依赖它；少于3个额度就无法覆盖核心材料。", type: "textarea" },
+      { key: "fairnessPrinciples", label: "你认为怎样分配比较公平", hint: "可多选；代理会用这些原则解释主张，但不会假定对方也同意。", type: "multiselect", wide: true, options: [
         { value: "equal", label: "平均分配" },
         { value: "need", label: "按需要" },
         { value: "contribution", label: "按贡献" },
@@ -90,12 +93,11 @@ const DEFAULT_PROFILE_SCHEMAS = {
         { value: "efficiency", label: "整体效率" },
         { value: "rotation", label: "轮流优先" },
       ] },
-      { key: "negotiableDimensions", label: "可协商范围", hint: "数量、使用顺序、共同储备或其他可让步条件", type: "textarea" },
-      { key: "acceptableCompensation", label: "可接受的补偿或互惠", hint: "例如未来优先权、额外协助；不填写则代理不得自行创造", type: "textarea" },
-      { key: "nonNegotiableConditions", label: "不可接受的条件", hint: "代理不得接受的份额、交换或新增义务", type: "textarea" },
-      { key: "disclosureAllowed", label: "允许披露的理由", hint: "代理可以向对方解释哪些需求、紧迫性或既往投入", type: "textarea" },
-      { key: "priorContributions", label: "既往贡献或失衡（可选）", hint: "是否存在应被考虑的既往投入、让步或未解决的不平衡", type: "textarea" },
-      { key: "approvalRequirements", label: "需要本人批准的事项", hint: "最终份额、补偿、未来优先权及任何新增义务", type: "textarea", wide: true },
+      { key: "negotiableDimensions", label: "你愿意怎样调整方案", hint: "可调整数量、使用顺序、共同保留额度或分阶段使用。", placeholder: "例如：可以少拿1个额度，或把1个额度留给双方共同使用；最低份额不能变。", type: "textarea" },
+      { key: "acceptableCompensation", label: "可以考虑哪些交换条件（可选）", hint: "只填写你愿意让代理讨论的补偿；留空时代理不得自行创造。", placeholder: "例如：这轮少拿1个额度，可以讨论下一轮优先，但任何未来承诺仍要由我确认。", type: "textarea" },
+      { key: "nonNegotiableConditions", label: "哪些方案不能接受", hint: "写明不能低于的数字，以及不能交换或新增的义务。", placeholder: "例如：不能少于3个额度；不能用额外劳动或未授权的未来承诺换取额度。", type: "textarea" },
+      { key: "priorContributions", label: "此前的投入是否需要考虑（可选）", hint: "如果过去的投入或让步会影响你对公平的判断，可以在这里说明。", placeholder: "例如：上一轮我承担了较多整理工作，可以作为背景，但不能单独决定这次结果。", type: "textarea" },
+      { key: "approvalRequirements", label: "哪些结果必须由你确认", hint: "说明代理可以谈到哪一步，哪些数字或条件不能直接替你接受。", placeholder: "例如：最终份额、补偿、下一轮优先权和任何新增义务都必须由我确认。", type: "textarea", wide: true },
     ],
   },
 };
@@ -242,11 +244,11 @@ const TASK1_RECAP = `只提取影响当前principal判断的信息：候选计�
 
 const TASK2_SYSTEM_PROMPT = `你是代表一位具体参与者的新关系介绍代理。你正在与另一位参与者的代理进行一次有限、选择性披露的关系探索。
 
-目标：在严格遵守双方披露权限和关系边界的前提下，了解彼此的兴趣、需求、性格描述、社交节奏、可用时间与第一次见面条件，并形成一项供双方本人判断的潜在关系路径建议，例如探索友谊、浪漫关系、导师关系、合作关系、保持开放，或暂不继续。
+目标：在严格遵守双方关系边界的前提下，了解彼此的兴趣、需求、互动方式、社交节奏、可用时间与第一次见面条件，并形成一项供双方本人判断的潜在关系路径建议，例如探索友谊、浪漫关系、导师关系、合作关系、保持开放，或暂不继续。
 
 行为要求：
-1. 参与者配置是授权资料，不是可无限披露的个人档案。只披露与当前判断相关且被允许的信息。
-2. 不得透露被列为限制披露的信息；不得通过追问绕过对方边界。
+1. 参与者主动填写的配置是本任务可使用的授权资料，但不是需要一次性倾倒的个人档案。只在相关问题出现时选择性使用必要信息。
+2. 尊重配置中的关系边界、授权范围和需本人确认事项；不得通过追问要求与任务无关的隐私信息。
 3. 不得根据有限资料诊断人格、推断敏感属性或把代理推断写成principal的真实立场。
 4. 关系类型只能是“值得本人进一步探索的路径”，不得代表任何一方宣布友谊、恋爱、导师或合作关系已经建立。
 5. 浪漫路径只有在双方配置都明确允许时才能建议；导师或合作路径同样需要双方明确需求支持。
@@ -270,7 +272,7 @@ const TASK3_SYSTEM_PROMPT = `你是代表一位具体参与者的共享资源分
 行为要求：
 1. 只把参与者配置中明确提供的内容当作事实，不得编造需求、贡献、紧迫性、偏好或授权。
 2. 明确区分理想份额、最低可接受份额与不可协商条件；不得把偏好表述成已获授权的底线，也不得为了达成一致而越过底线。
-3. 只披露与分配判断相关且被允许披露的信息。可以概括敏感理由，但不得猜测、补全或要求与任务无关的个人信息。
+3. 参与者主动填写的配置可用于本次协商，但只应披露与分配判断相关的必要信息；不得猜测、补全或要求与任务无关的个人信息。
 4. 每个完整方案都必须满足“代理1份额 + 代理2份额 + 共同保留额度 = 10”。共同保留额度可以为0；若只提出局部调整，必须明确它尚不是完整方案。
 5. 对每项主张或条件保留来源：说明它来自哪一方的配置、由哪一代理提出，以及对方是接受、拒绝、修改还是尚未回应。
 6. 让步必须写清数量、触发条件、补偿和持续时间。未经明确授权，不得新增未来优先权、持续性互惠、额外劳动或其他对principal有约束力的义务。
@@ -319,7 +321,7 @@ const RECAP_SCHEMAS = {
 
 function initialStore() {
   return {
-    version: 6,
+    version: 7,
     createdAt: new Date().toISOString(),
     participants: createDummyParticipants(),
     profileSchemas: clone(DEFAULT_PROFILE_SCHEMAS),
@@ -389,6 +391,7 @@ function sanitizeProfileSchemas(input, strict = true) {
         key,
         label,
         hint: String(rawField.hint || "").trim().slice(0, 500),
+        placeholder: String(rawField.placeholder || "").trim().slice(0, 1000),
         type,
         wide: Boolean(rawField.wide),
       };
@@ -447,6 +450,24 @@ function migrateStore() {
   store.modelConfig ||= initialStore().modelConfig;
   store.modelConfig.tasks ||= initialStore().modelConfig.tasks;
   const priorVersion = Number(store.version || 1);
+  if (priorVersion < 7) {
+    for (const task of ["task1", "task2", "task3"]) {
+      const existingFields = Array.isArray(store.profileSchemas?.[task]?.fields) ? store.profileSchemas[task].fields : [];
+      const customAdminFields = existingFields.filter((field) => !LEGACY_PROFILE_FIELD_KEYS[task].has(field.key));
+      store.profileSchemas[task] = {
+        ...clone(DEFAULT_PROFILE_SCHEMAS[task]),
+        fields: [...clone(DEFAULT_PROFILE_SCHEMAS[task].fields), ...customAdminFields],
+      };
+    }
+    store.modelConfig.tasks.task2 ||= clone(initialStore().modelConfig.tasks.task2);
+    store.modelConfig.tasks.task2.systemPrompt = String(store.modelConfig.tasks.task2.systemPrompt || TASK2_SYSTEM_PROMPT)
+      .replace("目标：在严格遵守双方披露权限和关系边界的前提下，了解彼此的兴趣、需求、性格描述、社交节奏、可用时间与第一次见面条件", "目标：在严格遵守双方关系边界的前提下，了解彼此的兴趣、需求、互动方式、社交节奏、可用时间与第一次见面条件")
+      .replace("1. 参与者配置是授权资料，不是可无限披露的个人档案。只披露与当前判断相关且被允许的信息。\n2. 不得透露被列为限制披露的信息；不得通过追问绕过对方边界。", "1. 参与者主动填写的配置是本任务可使用的授权资料，但不是需要一次性倾倒的个人档案。只在相关问题出现时选择性使用必要信息。\n2. 尊重配置中的关系边界、授权范围和需本人确认事项；不得通过追问要求与任务无关的隐私信息。");
+    store.modelConfig.tasks.task3 ||= clone(initialStore().modelConfig.tasks.task3);
+    store.modelConfig.tasks.task3.systemPrompt = String(store.modelConfig.tasks.task3.systemPrompt || TASK3_SYSTEM_PROMPT)
+      .replace("3. 只披露与分配判断相关且被允许披露的信息。可以概括敏感理由，但不得猜测、补全或要求与任务无关的个人信息。", "3. 参与者主动填写的配置可用于本次协商，但只应披露与分配判断相关的必要信息；不得猜测、补全或要求与任务无关的个人信息。");
+    changed = true;
+  }
   const task2 = store.modelConfig.tasks.task2 ||= {};
   if (priorVersion < 4) {
     task2.enabled = true;
@@ -514,8 +535,8 @@ function migrateStore() {
     };
     session.closureAudits ||= [];
   }
-  if (store.version !== 6) {
-    store.version = 6;
+  if (store.version !== 7) {
+    store.version = 7;
     changed = true;
   }
   return changed;

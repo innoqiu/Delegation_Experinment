@@ -47,7 +47,7 @@ export default function ProfileSchemaPage({ notify }) {
 
   function addField() {
     const key = `field_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
-    updateSchema({ fields: [...schema.fields, { key, label: "新问题", hint: "", type: "textarea", wide: false }] });
+    updateSchema({ fields: [...schema.fields, { key, label: "新问题", hint: "", placeholder: "", type: "textarea", wide: false }] });
   }
 
   function removeField(index) {
@@ -127,6 +127,7 @@ export default function ProfileSchemaPage({ notify }) {
                       </select>
                     </Field>
                     <Field label="说明 / 提示" className="span-two"><TextInput value={field.hint || ""} maxLength={500} onChange={(event) => updateField(index, { hint: event.target.value })} /></Field>
+                    {field.type !== "multiselect" && <Field label="输入框示例" hint="以灰色placeholder显示，不会保存为参与者答案" className="span-two"><TextArea value={field.placeholder || ""} maxLength={1000} onChange={(event) => updateField(index, { placeholder: event.target.value })} /></Field>}
                     {field.type === "number" && <>
                       <Field label="最小值"><TextInput type="number" value={field.min ?? ""} onChange={(event) => updateField(index, { min: event.target.value === "" ? undefined : Number(event.target.value) })} /></Field>
                       <Field label="最大值"><TextInput type="number" value={field.max ?? ""} onChange={(event) => updateField(index, { max: event.target.value === "" ? undefined : Number(event.target.value) })} /></Field>

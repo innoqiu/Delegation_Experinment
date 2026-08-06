@@ -176,12 +176,16 @@ try {
   assert.equal(p1a.user.role, "participant");
 
   const participantSchemas = await request("/api/profile-schemas", { token: p1a.token });
-  assert.equal(participantSchemas.profileSchemas.task3.title, "共享资源分配");
+  assert.equal(participantSchemas.profileSchemas.task3.title, "共享支持额度协商");
   assert.equal(participantSchemas.profileSchemas.task3.fields.some(({ key }) => key === "minimumShare"), true);
+  assert.equal(participantSchemas.profileSchemas.task2.fields.some(({ key }) => key === "disclosureAllowed"), false);
+  assert.equal(participantSchemas.profileSchemas.task2.fields.some(({ key }) => key === "disclosureRestricted"), false);
+  assert.match(participantSchemas.profileSchemas.task1.fields.find(({ key }) => key === "interests").placeholder, /当代艺术展/);
   await request("/api/profile-schemas", { token: p1a.token, method: "PUT", body: participantSchemas, expected: 403 });
-  participantSchemas.profileSchemas.task3.fields.push({ key: "testCondition", label: "实验附加条件", hint: "用于验证动态固定问题", type: "textarea", wide: true });
+  participantSchemas.profileSchemas.task3.fields.push({ key: "testCondition", label: "实验附加条件", hint: "用于验证动态固定问题", placeholder: "例如：保留一份供共同使用", type: "textarea", wide: true });
   const updatedSchemas = await request("/api/profile-schemas", { token: admin.token, method: "PUT", body: participantSchemas });
   assert.equal(updatedSchemas.profileSchemas.task3.fields.at(-1).key, "testCondition");
+  assert.equal(updatedSchemas.profileSchemas.task3.fields.at(-1).placeholder, "例如：保留一份供共同使用");
 
   const seededParticipants = await request("/api/participants", { token: admin.token });
   assert.equal(seededParticipants.participants.some(({ id }) => id === "P0A"), true);
