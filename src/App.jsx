@@ -16,6 +16,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(Boolean(getToken()));
   const [page, setPage] = useState("profiles");
+  const [pageContext, setPageContext] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -46,6 +47,12 @@ export default function App() {
     setToken("");
     setUser(null);
     setPage("profiles");
+    setPageContext(null);
+  }
+
+  function navigate(nextPage, context = null) {
+    setPage(nextPage);
+    setPageContext(context);
   }
 
   function notify(message, tone = "success") {
@@ -57,10 +64,10 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginPage onLogin={(nextUser) => { setUser(nextUser); setPage("profiles"); }} />;
+    return <LoginPage onLogin={(nextUser) => { setUser(nextUser); setPage("profiles"); setPageContext(null); }} />;
   }
 
-  const pageProps = { user, notify };
+  const pageProps = { user, notify, onNavigate: navigate, pageContext };
   const content = {
     profiles: <AgentConfigPage {...pageProps} />,
     schemas: <ProfileSchemaPage {...pageProps} />,
@@ -72,7 +79,7 @@ export default function App() {
 
   return (
     <>
-      <AppShell user={user} page={page} onPageChange={setPage} onLogout={logout}>
+      <AppShell user={user} page={page} onPageChange={(nextPage) => navigate(nextPage)} onLogout={logout}>
         {content}
       </AppShell>
       {toast && <div className={`toast toast-${toast.tone}`}>{toast.message}</div>}

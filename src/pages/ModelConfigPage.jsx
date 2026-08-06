@@ -114,8 +114,8 @@ export default function ModelConfigPage({ notify }) {
               <div className="fixed-rule"><span>最大回合</span><strong>10</strong></div>
             </div>
             <Field label="系统提示词" hint="用于指导两个代理完成当前Profile；参与者配置将在运行时附加。"><TextArea className="code-textarea" rows="14" value={task.systemPrompt} onChange={(e) => updateTask("systemPrompt", e.target.value)} /></Field>
-            <Field label="任务完成短语"><TextInput value={task.completionPhrase} readOnly /></Field>
-            <Field label="Recap结构" hint="每个代理对应的模型将依据完整transcript分别为自己的principal生成recap。"><TextArea className="code-textarea" rows="12" value={task.recapPrompt} onChange={(e) => updateTask("recapPrompt", e.target.value)} /></Field>
+            <Field label="第一阶段结束信号" hint="仅供模型协议使用；服务端会将其转换为不可见元数据，不保存到transcript，也不发送给另一代理。"><TextInput value={task.completionPhrase} readOnly /></Field>
+            <Field label="Recap提取规则" hint="界面标题与字段结构由系统固定，以保证A/B一致；这里仅配置各Task应提取或忽略的信息。"><TextArea className="code-textarea" rows="8" value={task.recapPrompt} onChange={(e) => updateTask("recapPrompt", e.target.value)} /></Field>
           </div>
         )}
       </section>

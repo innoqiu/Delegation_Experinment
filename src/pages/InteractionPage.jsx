@@ -137,7 +137,7 @@ export default function InteractionPage({ user, notify }) {
       </section>
 
       <div className="task-controls">
-        <div><strong>任务控制</strong><span>由Agent 1发起；双方完成或达到10回合后自动生成recap。</span></div>
+        <div><strong>任务控制</strong><span>由Agent 1发起；双方独立申请结束并通过私有审核，或达到10回合后生成recap。</span></div>
         {["task1", "task2", "task3"].map((key, index) => (
           <button key={key} className={`button ${key === "task1" ? "button-primary" : "button-secondary"}`} disabled={active || starting || !tasks[key]?.enabled} onClick={() => start(key)}>
             <Icon name="play" size={16} />执行 Task {index + 1}{!tasks[key]?.enabled ? " · 未启用" : ""}

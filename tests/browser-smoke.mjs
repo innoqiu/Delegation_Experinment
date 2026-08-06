@@ -1,0 +1,156 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
+const chromePath = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+const debugPort = 9337;
+const appPort = 44_000 + Math.floor(Math.random() * 8_000);
+const adminCode = "browser-admin-code";
+const profileDir = mkdtempSync(join(tmpdir(), "proxylab-browser-"));
+const appDataDir = process.env.BROWSER_TEST_URL ? null : mkdtempSync(join(tmpdir(), "proxylab-browser-data-"));
+const appUrl = process.env.BROWSER_TEST_URL || `http://127.0.0.1:${appPort}/`;
+const screenshotPath = process.env.BROWSER_SCREENSHOT_PATH || join(tmpdir(), "proxylab-consent-qa.png");
+let appProcess;
+let chrome;
+
+async function waitFor(check, message, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const value = await check();
+      if (value) return value;
+    } catch { /* The app, page, or debugging endpoint may still be starting. */ }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+  throw new Error(message);
+}
+
+if (!process.env.BROWSER_TEST_URL) {
+  appProcess = spawn(process.execPath, ["server.mjs"], {
+    cwd: projectDir,
+    env: {
+      ...process.env,
+      HOST: "127.0.0.1",
+      PORT: String(appPort),
+      DATA_DIR: appDataDir,
+      ADMIN_ACCESS_CODE: adminCode,
+    },
+    stdio: "ignore",
+  });
+  await waitFor(async () => (await fetch(`${appUrl}api/health`)).ok, "Isolated ProxyLab server did not start");
+}
+
+chrome = spawn(chromePath, [
+  "--headless=new",
+  "--disable-gpu",
+  "--no-first-run",
+  "--window-size=1440,1000",
+  `--remote-debugging-port=${debugPort}`,
+  `--user-data-dir=${profileDir}`,
+  appUrl,
+], { stdio: "ignore" });
+
+async function connectPage() {
+  const target = await waitFor(async () => {
+    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+    const pages = await response.json();
+    return pages.find((page) => page.type === "page" && page.webSocketDebuggerUrl);
+  }, "Chrome DevTools page did not become available");
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolvePromise, rejectPromise) => {
+    socket.addEventListener("open", resolvePromise, { once: true });
+    socket.addEventListener("error", rejectPromise, { once: true });
+  });
+  let callId = 0;
+  const pending = new Map();
+  const events = [];
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (!message.id) {
+      events.push(message);
+      return;
+    }
+    if (!pending.has(message.id)) return;
+    const { resolvePromise, rejectPromise } = pending.get(message.id);
+    pending.delete(message.id);
+    if (message.error) rejectPromise(new Error(message.error.message));
+    else resolvePromise(message.result);
+  });
+  function call(method, params = {}) {
+    const id = ++callId;
+    socket.send(JSON.stringify({ id, method, params }));
+    return new Promise((resolvePromise, rejectPromise) => pending.set(id, { resolvePromise, rejectPromise }));
+  }
+  return { socket, call, events };
+}
+
+async function evaluate(call, expression) {
+  const result = await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Browser evaluation failed");
+  }
+  return result.result.value;
+}
+
+const fillAndSubmitScript = (value) => `(() => {
+  const input = document.querySelector('input');
+  const button = [...document.querySelectorAll('button')].find((item) => item.innerText.trim() === '登录');
+  if (!input || !button) throw new Error('Login controls not found');
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  setter.call(input, ${JSON.stringify(value)});
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  button.click();
+  return true;
+})()`;
+
+let client;
+try {
+  client = await connectPage();
+  await client.call("Runtime.enable");
+  await client.call("Log.enable");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('进入实验系统')"), "Participant login page did not render");
+  assert.equal(await evaluate(client.call, "location.origin"), new URL(appUrl).origin);
+  assert.match(await evaluate(client.call, "document.title"), /ProxyLab/);
+  const publicLoginText = await evaluate(client.call, "document.body.innerText");
+  assert.doesNotMatch(publicLoginText, /admin|管理员/i);
+
+  await evaluate(client.call, fillAndSubmitScript("P91A"));
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('研究参与知情同意')"), "Consent form did not render for a first-time participant");
+  const consentText = await evaluate(client.call, "document.body.innerText");
+  assert.match(consentText, /HKUST\(GZ\)-HSP-2026-0135/);
+  assert.match(consentText, /TONG XIN/);
+  assert.match(consentText, /FANGZE QIU/);
+  assert.match(consentText, /2026年07月06日—2030年07月05日/);
+  assert.equal(await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.includes('同意并进入研究')).disabled"), true);
+  const screenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
+
+  await evaluate(client.call, `(() => {
+    document.querySelectorAll('.consent-check input').forEach((input) => input.click());
+    return true;
+  })()`);
+  await waitFor(() => evaluate(client.call, "![...document.querySelectorAll('button')].find((item) => item.innerText.includes('同意并进入研究')).disabled"), "Consent submit did not enable");
+  await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.includes('同意并进入研究')).click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('授权意图记录')"), "Accepted participant did not enter the profile page");
+
+  await evaluate(client.call, "localStorage.clear(); location.href = '/admin'; true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('管理员登录')"), "Dedicated admin login page did not render");
+  await evaluate(client.call, fillAndSubmitScript(adminCode));
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('模型配置')"), "Admin access-code login did not enter the admin shell");
+
+  const browserErrors = client.events.filter((event) => (
+    event.method === "Runtime.exceptionThrown"
+    || (event.method === "Log.entryAdded" && ["error", "warning"].includes(event.params?.entry?.level))
+  ));
+  assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}`);
+  console.log(`Browser smoke passed: first-login consent gate, mandatory confirmations, public admin-hint removal, and protected /admin login. Screenshot: ${screenshotPath}`);
+} finally {
+  try { await client?.call("Browser.close"); } catch { chrome?.kill(); }
+  appProcess?.kill();
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 300));
+  rmSync(profileDir, { recursive: true, force: true });
+  if (appDataDir) rmSync(appDataDir, { recursive: true, force: true });
+}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, jsonBody } from "../api.js";
 import { Icon } from "./Icons.jsx";
+import TextAnnotation from "./TextAnnotation.jsx";
 
 function CommentEditor({ sessionId, message, user, onSaved, notify }) {
   const ownComment = message.comments?.find((comment) => comment.author === user.id);
@@ -42,7 +43,7 @@ function CommentEditor({ sessionId, message, user, onSaved, notify }) {
   );
 }
 
-export default function SessionTranscript({ session, user, notify, onMessageUpdated, allowComments = true }) {
+export default function SessionTranscript({ session, user, notify, onMessageUpdated, annotations = [], onAnnotationSaved, allowComments = true }) {
   if (!session?.transcript?.length) return <div className="empty-state compact">对话尚未产生消息。</div>;
   return (
     <div className="transcript" aria-live="polite">
@@ -53,7 +54,18 @@ export default function SessionTranscript({ session, user, notify, onMessageUpda
             <div className="speaker-label"><strong>{message.participantId}</strong><span>回合 {message.round}</span></div>
             <div className="message-wrap">
               <div className="message-meta"><strong>{message.messageId}</strong><time>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour12: false })}</time></div>
-              <div className="message-text">{message.text}</div>
+              {allowComments ? (
+                <TextAnnotation
+                  sessionId={session.id}
+                  targetType="message"
+                  targetId={message.messageId}
+                  annotations={annotations.filter((annotation) => annotation.targetType === "message" && annotation.targetId === message.messageId)}
+                  onSaved={onAnnotationSaved}
+                  notify={notify}
+                >
+                  <div className="message-text">{message.text}</div>
+                </TextAnnotation>
+              ) : <div className="message-text">{message.text}</div>}
               {allowComments && (
                 <CommentEditor sessionId={session.id} message={message} user={user} notify={notify} onSaved={onMessageUpdated} />
               )}

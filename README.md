@@ -4,20 +4,20 @@
 
 ## 功能
 
-- 参与者编号登录：`P1A`、`P1B`等，不区分大小写；首次登录自动注册。
+- 参与者编号登录：`P1A`、`P1B`等，不区分大小写；首次登录先显示知情同意书，完成全部关键确认后才创建登录会话。系统记录受试者编号、同意时间、同意书版本及确认项。
 - 每次启动都会确保存在`P0A`与`P0B`两位内置dummy参与者，并为Profile 1、Profile 2提供可直接运行的测试数据；已有同名数据不会被覆盖。
-- `admin`登录进入管理界面，无密码（按实验内网使用要求实现）。
+- 管理员入口与参与者入口分离：访问`/admin`并输入部署环境变量`ADMIN_ACCESS_CODE`；参与者主页不展示管理员提示，单独输入`admin`也无法获得权限。
 - 参与者仅可访问自己的Agent配置、相关session的完整transcript和自己的recap。
 - 管理员可查看所有已登录参与者、配置两个模型端点、获取模型列表并运行任意两位不同参与者的代理。
 - Task 1（社交计划）、Task 2（新关系介绍）与Task 3（固定10个共享支持额度的资源分配协商）均内置交互提示词和recap结构。
 - Task 3要求代理显式区分理想份额、最低份额、公平依据、条件/补偿、授权边界与待本人批准事项；完整方案中的双方份额和共同保留额度必须合计为10。
 - 管理员可在独立的“Profile结构”页面增加、删除、排序或修改固定问题及Profile标题/描述；改动影响当前问卷和未来会话，既有会话保留创建时的结构快照。
-- 每个Task最多10回合。双方发送`我认为任务已完成申请结束`后提前结束。
+- 每个Task最多10回合。代理发出的结束申请会被服务端解析为不可见元数据，不进入对话记录，也不会传给另一代理；双方独立申请后，还需通过第二阶段的私有授权与未决事项审核才会提前结束。
 - 每个代理发言使用`P1A_T1_1`格式的会话内消息ID，并支持参与者/admin逐条评论。
 - 参与者可在每个已启用Profile中添加、命名和删除自定义实验条件；有内容的条目会加入对应代理与recap提示词。
 - 每次任务启动时冻结双方Profile快照，保证同一session中的提示词条件不会因后续编辑而变化。
-- 每次运行独立保存transcript、两个principal的recap、模型与任务配置快照、评论和审批决定。
-- 管理员Recap页按participant A／B左右对照展示双方独立recap；参与者仍只查看自己的单栏recap。
+- 每次运行独立保存transcript、两个principal的结构化recap、模型与任务配置快照、文字标记、section级决定和后续流程记录。Recap由固定JSON schema约束，A/B使用完全相同的标题与字段，并过滤通用免责声明和重复事实。
+- 管理员Recap页按participant A／B左右对照展示双方独立recap；参与者仍只查看自己的单栏报告。旧Markdown记录会自动压缩为固定标题的报告视图。
 - 管理员可在历史详情中永久删除已结束的记录；系统会二次确认，并禁止删除仍在运行或生成recap的记录。
 
 ## 本地运行
@@ -39,7 +39,7 @@ npm start
 ```bash
 npm ci
 npm run build
-HOST=0.0.0.0 PORT=8787 DATA_DIR=/srv/proxylab-data npm start
+HOST=0.0.0.0 PORT=8787 DATA_DIR=/srv/proxylab-data ADMIN_ACCESS_CODE=请设置高强度访问码 npm start
 ```
 
 Windows PowerShell示例：
@@ -48,8 +48,11 @@ Windows PowerShell示例：
 $env:HOST = "0.0.0.0"
 $env:PORT = "8787"
 $env:DATA_DIR = "D:\proxylab-data"
+$env:ADMIN_ACCESS_CODE = "请设置高强度访问码"
 npm.cmd start
 ```
+
+Zeabur部署时请在服务的环境变量中增加`ADMIN_ACCESS_CODE`，然后重新部署。管理员通过`https://你的域名/admin`登录；访问码只从环境变量读取，不写入实验数据或前端构建文件。
 
 建议由Nginx/Caddy反向代理并启用HTTPS。实验开始后应定期备份`DATA_DIR/store.json`。API Key保存在此文件中，因此应限制文件权限并避免把数据目录提交到Git。
 
@@ -69,10 +72,11 @@ npm.cmd start
 ```bash
 npm run check
 npm run test:smoke
+npm run test:browser
 ```
 
-Smoke test会启动隔离的数据目录与本地模拟模型，验证登录权限、配置保存、模型连接、双代理自动交互、消息ID、双方recap、评论、审批决定和历史记录。
+API smoke test会启动隔离的数据目录与本地模拟模型，验证首次登录知情同意、管理员访问码、固定recap schema、A/B结构一致性、登录权限、配置保存、双代理交互、标记、section决定和历史记录。浏览器smoke test会自行启动隔离服务，验证实际同意书与管理员登录页面；需要本机安装Chrome。
 
 ## 数据与安全边界
 
-本系统按研究原型要求允许输入`admin`直接获得管理权限，不适合直接暴露在公共互联网。若需要公网部署，应在反向代理层增加访问控制或VPN，并在正式收集数据前完成伦理与数据管理审查。
+本系统仍是研究原型。若需要公网部署，应为`ADMIN_ACCESS_CODE`设置独立高强度值，并在反向代理层增加HTTPS、访问控制或VPN；正式收集数据前还应完成伦理与数据管理审查。
