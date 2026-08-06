@@ -1,5 +1,6 @@
 export function Icon({ name, size = 20 }) {
   const paths = {
+    guide: <><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2-2.5 3.8"/><path d="M12 17.5h.01"/></>,
     profiles: <><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><circle cx="12" cy="13" r="2.2"/><path d="M9 19c.5-2 1.5-3 3-3s2.5 1 3 3"/></>,
     schema: <><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/><circle cx="4" cy="8" r=".6"/><circle cx="4" cy="12" r=".6"/><circle cx="4" cy="16" r=".6"/></>,
     models: <><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4.5 7.8 7.5 4.3 7.5-4.3M12 12v8.5"/></>,

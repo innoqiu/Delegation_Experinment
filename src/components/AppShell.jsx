@@ -1,6 +1,7 @@
 import { Icon } from "./Icons.jsx";
 
 const NAV = [
+  { id: "intro", label: "使用说明", icon: "guide", participant: true },
   { id: "profiles", label: "Agent配置", icon: "profiles" },
   { id: "schemas", label: "Profile结构", icon: "schema", admin: true },
   { id: "models", label: "模型配置", icon: "models", admin: true },
@@ -15,7 +16,7 @@ export default function AppShell({ user, page, onPageChange, onLogout, children 
       <aside className="sidebar">
         <div className="wordmark">ProxyLab</div>
         <nav className="nav-list" aria-label="主导航">
-          {NAV.filter((item) => !item.admin || user.role === "admin").map((item) => (
+          {NAV.filter((item) => (!item.admin || user.role === "admin") && (!item.participant || user.role === "participant")).map((item) => (
             <button
               type="button"
               key={item.id}

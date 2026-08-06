@@ -5,8 +5,9 @@
 ## 功能
 
 - 参与者编号登录：`P1A`、`P1B`等，不区分大小写；首次登录先显示知情同意书，完成全部关键确认后才创建登录会话。系统记录受试者编号、同意时间、同意书版本及确认项。
+- 参与者登录后先看到三步使用说明：配置Agent、按需添加个人配置项、点击保存配置；之后可从侧栏再次打开说明。
 - 每次启动都会确保存在`P0A`与`P0B`两位内置dummy参与者，并为Profile 1、Profile 2提供可直接运行的测试数据；已有同名数据不会被覆盖。
-- 管理员入口与参与者入口分离：访问`/admin`并输入部署环境变量`ADMIN_ACCESS_CODE`；参与者主页不展示管理员提示，单独输入`admin`也无法获得权限。
+- 参与者与管理员共用登录框：参与者输入`P1A`、`P1B`等编号；管理员输入`admin_arklab`直接进入管理系统（不区分大小写）。
 - 参与者仅可访问自己的Agent配置、相关session的完整transcript和自己的recap。
 - 管理员可查看所有已登录参与者、配置两个模型端点、获取模型列表并运行任意两位不同参与者的代理。
 - Task 1（社交计划）、Task 2（新关系介绍）与Task 3（固定10个共享支持额度的资源分配协商）均内置交互提示词和recap结构。
@@ -39,7 +40,7 @@ npm start
 ```bash
 npm ci
 npm run build
-HOST=0.0.0.0 PORT=8787 DATA_DIR=/srv/proxylab-data ADMIN_ACCESS_CODE=请设置高强度访问码 npm start
+HOST=0.0.0.0 PORT=8787 DATA_DIR=/srv/proxylab-data npm start
 ```
 
 Windows PowerShell示例：
@@ -48,11 +49,10 @@ Windows PowerShell示例：
 $env:HOST = "0.0.0.0"
 $env:PORT = "8787"
 $env:DATA_DIR = "D:\proxylab-data"
-$env:ADMIN_ACCESS_CODE = "请设置高强度访问码"
 npm.cmd start
 ```
 
-Zeabur部署时请在服务的环境变量中增加`ADMIN_ACCESS_CODE`，然后重新部署。管理员通过`https://你的域名/admin`登录；访问码只从环境变量读取，不写入实验数据或前端构建文件。
+Zeabur部署后，管理员与参与者使用同一登录页；输入`admin_arklab`即可进入管理系统。
 
 建议由Nginx/Caddy反向代理并启用HTTPS。实验开始后应定期备份`DATA_DIR/store.json`。API Key保存在此文件中，因此应限制文件权限并避免把数据目录提交到Git。
 
@@ -75,8 +75,8 @@ npm run test:smoke
 npm run test:browser
 ```
 
-API smoke test会启动隔离的数据目录与本地模拟模型，验证首次登录知情同意、管理员访问码、固定recap schema、A/B结构一致性、登录权限、配置保存、双代理交互、标记、section决定和历史记录。浏览器smoke test会自行启动隔离服务，验证实际同意书与管理员登录页面；需要本机安装Chrome。
+API smoke test会启动隔离的数据目录与本地模拟模型，验证首次登录知情同意、`admin_arklab`直接登录、固定recap schema、A/B结构一致性、登录权限、配置保存、双代理交互、标记、section决定和历史记录。浏览器smoke test会自行启动隔离服务，验证实际同意书与统一登录页面；需要本机安装Chrome。
 
 ## 数据与安全边界
 
-本系统仍是研究原型。若需要公网部署，应为`ADMIN_ACCESS_CODE`设置独立高强度值，并在反向代理层增加HTTPS、访问控制或VPN；正式收集数据前还应完成伦理与数据管理审查。
+本系统仍是研究原型。`admin_arklab`是便捷的共享管理员编号，不提供强身份认证；公网部署时应限制该编号的传播，并优先在反向代理层增加HTTPS、IP访问控制或VPN。正式收集数据前还应完成伦理与数据管理审查。

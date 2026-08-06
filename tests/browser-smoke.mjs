@@ -8,12 +8,14 @@ const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const chromePath = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const debugPort = 40_000 + Math.floor(Math.random() * 3_000);
 const appPort = 44_000 + Math.floor(Math.random() * 8_000);
-const adminCode = "browser-admin-code";
 const profileDir = mkdtempSync(join(projectDir, ".proxylab-browser-"));
 const appDataDir = process.env.BROWSER_TEST_URL ? null : mkdtempSync(join(projectDir, ".proxylab-browser-data-"));
 const appUrl = process.env.BROWSER_TEST_URL || `http://127.0.0.1:${appPort}/`;
 const screenshotPath = process.env.BROWSER_SCREENSHOT_PATH || join(projectDir, "..", "proxylab-consent-qa.png");
+const introScreenshotPath = process.env.BROWSER_INTRO_SCREENSHOT_PATH || join(projectDir, "..", "proxylab-participant-intro-qa.png");
+const introMobileScreenshotPath = process.env.BROWSER_INTRO_MOBILE_SCREENSHOT_PATH || join(projectDir, "..", "proxylab-participant-intro-mobile-qa.png");
 const profileScreenshotPath = process.env.BROWSER_PROFILE_SCREENSHOT_PATH || join(projectDir, "..", "proxylab-profile-qa.png");
+const adminScreenshotPath = process.env.BROWSER_ADMIN_SCREENSHOT_PATH || join(projectDir, "..", "proxylab-admin-login-qa.png");
 let appProcess;
 let chrome;
 
@@ -36,7 +38,6 @@ if (!process.env.BROWSER_TEST_URL) {
       HOST: "127.0.0.1",
       PORT: String(appPort),
       DATA_DIR: appDataDir,
-      ADMIN_ACCESS_CODE: adminCode,
     },
     stdio: "ignore",
   });
@@ -145,6 +146,20 @@ try {
   })()`);
   await waitFor(() => evaluate(client.call, "![...document.querySelectorAll('button')].find((item) => item.innerText.includes('同意并进入研究')).disabled"), "Consent submit did not enable");
   await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.includes('同意并进入研究')).click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('先告诉 Agent，怎样代表你')"), "Participant introduction page did not render after login");
+  const introText = await evaluate(client.call, "document.body.innerText");
+  assert.match(introText, /配置你的 Agent/);
+  assert.match(introText, /按需添加配置项/);
+  assert.match(introText, /点击保存配置/);
+  assert.doesNotMatch(introText, /模型配置|历史/);
+  const introScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(introScreenshotPath, Buffer.from(introScreenshot.data, "base64"));
+  await client.call("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  assert.equal(await evaluate(client.call, "document.documentElement.scrollWidth <= document.documentElement.clientWidth"), true);
+  const introMobileScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(introMobileScreenshotPath, Buffer.from(introMobileScreenshot.data, "base64"));
+  await client.call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.includes('开始配置')).click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('授权意图记录')"), "Accepted participant did not enter the profile page");
   const profileText = await evaluate(client.call, "document.body.innerText");
   assert.match(profileText, /帮你和朋友们安排本周出游或聚会/);
@@ -165,9 +180,12 @@ try {
   writeFileSync(profileScreenshotPath, Buffer.from(profileScreenshot.data, "base64"));
 
   await evaluate(client.call, "localStorage.clear(); location.href = '/admin'; true");
-  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('管理员登录')"), "Dedicated admin login page did not render");
-  await evaluate(client.call, fillAndSubmitScript(adminCode));
-  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('模型配置')"), "Admin access-code login did not enter the admin shell");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('进入实验系统')"), "Unified login page did not render on /admin");
+  await evaluate(client.call, fillAndSubmitScript("admin_arklab"));
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('模型配置')"), "admin_arklab did not enter the admin shell");
+  assert.match(await evaluate(client.call, "document.body.innerText"), /admin · 管理员/);
+  const adminScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(adminScreenshotPath, Buffer.from(adminScreenshot.data, "base64"));
   await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.trim() === 'Profile结构').click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('输入框示例')"), "Admin Profile schema editor did not expose placeholder editing");
 
@@ -176,7 +194,7 @@ try {
     || (event.method === "Log.entryAdded" && ["error", "warning"].includes(event.params?.entry?.level))
   ));
   assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}`);
-  console.log(`Browser smoke passed: consent gate, scenario-led Profile copy, empty placeholder examples, removed redundant disclosure fields, editable admin examples, and protected /admin login. Screenshots: ${screenshotPath}, ${profileScreenshotPath}`);
+  console.log(`Browser smoke passed: consent gate, responsive participant introduction flow, scenario-led Profile copy, empty placeholder examples, removed redundant disclosure fields, editable admin examples, and admin_arklab direct login. Screenshots: ${screenshotPath}, ${introScreenshotPath}, ${introMobileScreenshotPath}, ${profileScreenshotPath}, ${adminScreenshotPath}`);
 } finally {
   try { await client?.call("Browser.close"); } catch { chrome?.kill(); }
   appProcess?.kill();

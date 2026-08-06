@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, getToken, setToken } from "./api.js";
 import AppShell from "./components/AppShell.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import ParticipantIntroPage from "./pages/ParticipantIntroPage.jsx";
 import AgentConfigPage from "./pages/AgentConfigPage.jsx";
 import ProfileSchemaPage from "./pages/ProfileSchemaPage.jsx";
 import ModelConfigPage from "./pages/ModelConfigPage.jsx";
@@ -9,7 +10,7 @@ import InteractionPage from "./pages/InteractionPage.jsx";
 import RecapPage from "./pages/RecapPage.jsx";
 import HistoryPage from "./pages/HistoryPage.jsx";
 
-const PARTICIPANT_PAGES = ["profiles", "recaps"];
+const PARTICIPANT_PAGES = ["intro", "profiles", "recaps"];
 const ADMIN_PAGES = ["profiles", "schemas", "models", "interaction", "recaps", "history"];
 
 export default function App() {
@@ -64,11 +65,12 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginPage onLogin={(nextUser) => { setUser(nextUser); setPage("profiles"); setPageContext(null); }} />;
+    return <LoginPage onLogin={(nextUser) => { setUser(nextUser); setPage(nextUser.role === "participant" ? "intro" : "profiles"); setPageContext(null); }} />;
   }
 
   const pageProps = { user, notify, onNavigate: navigate, pageContext };
   const content = {
+    intro: <ParticipantIntroPage {...pageProps} />,
     profiles: <AgentConfigPage {...pageProps} />,
     schemas: <ProfileSchemaPage {...pageProps} />,
     models: <ModelConfigPage {...pageProps} />,

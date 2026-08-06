@@ -129,7 +129,7 @@ async function request(path, { token, method = "GET", body, expected = 200 } = {
 async function login(id) {
   const result = await request("/api/login", {
     method: "POST",
-    body: id.toLowerCase() === "admin" ? { id, adminCode: "test-admin-code" } : { id },
+    body: { id },
   });
   if (!result.requiresConsent) return result;
   return request("/api/consent", {
@@ -171,9 +171,11 @@ try {
   const p1a = await login("p1a");
   const p1b = await login("P1B");
   await request("/api/login", { method: "POST", body: { id: "admin" }, expected: 403 });
-  const admin = await login("admin");
+  const admin = await login("admin_arklab");
   assert.equal(p1a.user.id, "P1A");
   assert.equal(p1a.user.role, "participant");
+  assert.equal(admin.user.id, "admin");
+  assert.equal(admin.user.role, "admin");
 
   const participantSchemas = await request("/api/profile-schemas", { token: p1a.token });
   assert.equal(participantSchemas.profileSchemas.task3.title, "共享支持额度协商");
@@ -383,7 +385,7 @@ try {
   await request(`/api/sessions/${task3Created.session.id}`, { token: admin.token, method: "DELETE" });
   const emptyHistory = await request("/api/sessions", { token: admin.token });
   assert.equal(emptyHistory.sessions.length, 0);
-  console.log("Smoke test passed: first-login consent gate, protected admin login, fixed structured recaps, matching A/B sections, concise filtering, hidden two-stage completion, Task 2 requirements, annotations, decisions, workflow, history, and deletion.");
+  console.log("Smoke test passed: first-login consent gate, admin_arklab direct login, fixed structured recaps, matching A/B sections, concise filtering, hidden two-stage completion, Task 2 requirements, annotations, decisions, workflow, history, and deletion.");
 } finally {
   await close(appServer);
   await close(mock);
