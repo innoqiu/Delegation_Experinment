@@ -129,7 +129,7 @@ try {
   const publicLoginText = await evaluate(client.call, "document.body.innerText");
   assert.doesNotMatch(publicLoginText, /admin|管理员/i);
 
-  await evaluate(client.call, fillAndSubmitScript("P91A"));
+  await evaluate(client.call, fillAndSubmitScript("P1-HUANYI"));
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('研究参与知情同意')"), "Consent form did not render for a first-time participant");
   const consentText = await evaluate(client.call, "document.body.innerText");
   assert.match(consentText, /HKUST\(GZ\)-HSP-2026-0135/);

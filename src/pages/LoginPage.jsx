@@ -53,7 +53,7 @@ export default function LoginPage({ onLogin }) {
               className="input input-large"
               value={id}
               onChange={(event) => setId(event.target.value)}
-              placeholder="例如 P1A"
+              placeholder="例如 Q3、Q1A 或 P1-HUANYI"
               autoFocus
               autoComplete="username"
             />
@@ -66,6 +66,7 @@ export default function LoginPage({ onLogin }) {
             <strong>登录说明</strong>
             <ul>
               <li>编号不区分大小写，无需密码。</li>
+              <li>编号可使用字母、数字，以及中间的“-”或“_”。</li>
               <li>参与者首次登录需要阅读并提交知情同意。</li>
             </ul>
           </div>

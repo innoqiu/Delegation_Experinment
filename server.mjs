@@ -561,7 +561,7 @@ function normalizeParticipantId(value) {
 }
 
 function isParticipantId(value) {
-  return /^P\d+[AB]$/.test(value);
+  return /^(?=.*[A-Z])(?=.*\d)[A-Z0-9](?:[A-Z0-9_-]{0,38}[A-Z0-9])?$/.test(value);
 }
 
 function ensureParticipant(id) {
@@ -1223,7 +1223,7 @@ async function handleApi(req, res, url) {
       if (String(body.adminCode || "") !== ADMIN_ACCESS_CODE) throw httpError(403, "管理员访问码错误");
       return json(res, 200, issueAuth({ id: "admin", role: "admin" }));
     }
-    if (!isParticipantId(id)) throw httpError(400, "受试者编号格式应为P1A、P1B等");
+    if (!isParticipantId(id)) throw httpError(400, "受试者编号需包含字母和数字，可在中间使用-或_");
     const participant = ensureParticipant(id);
     if (!consentAccepted(participant)) {
       return json(res, 200, { requiresConsent: true, participantId: id, consentInfo: CONSENT_INFO });

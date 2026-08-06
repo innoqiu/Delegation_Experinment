@@ -160,6 +160,13 @@ try {
   const consentInfo = await request("/api/consent-info");
   assert.equal(consentInfo.consentInfo.ethicsNumber, "HKUST(GZ)-HSP-2026-0135");
   assert.equal(consentInfo.consentInfo.responsibleResearcher, "TONG XIN");
+  const flexibleIdLogin = await request("/api/login", { method: "POST", body: { id: "p1-huanyi" } });
+  assert.equal(flexibleIdLogin.requiresConsent, true);
+  assert.equal(flexibleIdLogin.participantId, "P1-HUANYI");
+  const shortIdLogin = await request("/api/login", { method: "POST", body: { id: "q3" } });
+  assert.equal(shortIdLogin.participantId, "Q3");
+  await request("/api/login", { method: "POST", body: { id: "Q 3" }, expected: 400 });
+  await request("/api/login", { method: "POST", body: { id: "Q3-" }, expected: 400 });
   const firstLogin = await request("/api/login", { method: "POST", body: { id: "p1a" } });
   assert.equal(firstLogin.requiresConsent, true);
   assert.equal(firstLogin.token, undefined);
