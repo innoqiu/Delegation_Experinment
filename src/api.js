@@ -33,4 +33,23 @@ export async function api(path, options = {}) {
   return payload;
 }
 
+export async function downloadApi(path) {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(path, { headers });
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+    const payload = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+    throw new Error(payload?.error || payload?.message || `下载失败 (${response.status})`);
+  }
+
+  const disposition = response.headers.get("content-disposition") || "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "proxylab-records.zip";
+  return { blob: await response.blob(), filename };
+}
+
 export const jsonBody = (value) => JSON.stringify(value);

@@ -161,6 +161,7 @@ try {
   await client.call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.includes('开始配置')).click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('授权意图记录')"), "Accepted participant did not enter the profile page");
+  assert.equal(await evaluate(client.call, "document.querySelector('.page-heading-row .button-primary') === null"), true);
   const profileText = await evaluate(client.call, "document.body.innerText");
   assert.match(profileText, /帮你和朋友们安排本周出游或聚会/);
   assert.match(profileText, /帮你进行初步交友/);
@@ -176,8 +177,19 @@ try {
     return true;
   })()`);
   assert.equal(await evaluate(client.call, "document.querySelector('[placeholder*=\"当代艺术展\"]')?.value"), "周末去看展");
+  await waitFor(() => evaluate(client.call, "Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).some((key) => key.includes('proxylab_profile_draft_v1:P1-HUANYI'))"), "Profile draft was not stored in the browser");
+  await evaluate(client.call, "[...document.querySelectorAll('.nav-item')].find((item) => item.innerText.trim() === 'Recap').click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('会话列表')"), "Participant could not switch to Recap");
+  await evaluate(client.call, "[...document.querySelectorAll('.nav-item')].find((item) => item.innerText.trim() === 'Agent配置').click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelector('[placeholder*=\"当代艺术展\"]')?.value === '周末去看展'"), "Profile draft did not survive page switching");
+  assert.match(await evaluate(client.call, "document.body.innerText"), /未保存内容已暂存于当前浏览器/);
+  assert.equal(await evaluate(client.call, "document.querySelector('.profile-save-footer .button-primary')?.innerText.includes('保存配置')"), true);
+  await evaluate(client.call, "document.querySelector('.profile-save-footer').scrollIntoView({ block: 'center' }); true");
   const profileScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(profileScreenshotPath, Buffer.from(profileScreenshot.data, "base64"));
+  await evaluate(client.call, "document.querySelector('.profile-save-footer .button-primary').click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('Agent 配置已保存')"), "Profile save did not complete");
+  assert.equal(await evaluate(client.call, "Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).some((key) => key.includes('proxylab_profile_draft_v1:P1-HUANYI'))"), false);
 
   await evaluate(client.call, "localStorage.clear(); location.href = '/admin'; true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('进入实验系统')"), "Unified login page did not render on /admin");
@@ -188,13 +200,15 @@ try {
   writeFileSync(adminScreenshotPath, Buffer.from(adminScreenshot.data, "base64"));
   await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.trim() === 'Profile结构').click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('输入框示例')"), "Admin Profile schema editor did not expose placeholder editing");
+  await evaluate(client.call, "[...document.querySelectorAll('.nav-item')].find((item) => item.innerText.trim() === '历史').click(); true");
+  await waitFor(() => evaluate(client.call, "[...document.querySelectorAll('button')].some((item) => item.innerText.includes('下载全部记录'))"), "Admin ZIP export button did not render");
 
   const browserErrors = client.events.filter((event) => (
     event.method === "Runtime.exceptionThrown"
     || (event.method === "Log.entryAdded" && ["error", "warning"].includes(event.params?.entry?.level))
   ));
   assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}`);
-  console.log(`Browser smoke passed: consent gate, responsive participant introduction flow, scenario-led Profile copy, empty placeholder examples, removed redundant disclosure fields, editable admin examples, and admin_arklab direct login. Screenshots: ${screenshotPath}, ${introScreenshotPath}, ${introMobileScreenshotPath}, ${profileScreenshotPath}, ${adminScreenshotPath}`);
+  console.log(`Browser smoke passed: participant draft recovery, bottom save, admin ZIP export control, consent, responsive introduction, and profile schema editing. Screenshots: ${screenshotPath}, ${introScreenshotPath}, ${introMobileScreenshotPath}, ${profileScreenshotPath}, ${adminScreenshotPath}`);
 } finally {
   try { await client?.call("Browser.close"); } catch { chrome?.kill(); }
   appProcess?.kill();

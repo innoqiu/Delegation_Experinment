@@ -14,7 +14,7 @@ const STEPS = [
   {
     icon: "save",
     title: "点击保存配置",
-    description: "填写完成后点击页面右上角的“保存配置”。只有保存后的内容才会提供给你的 Agent。",
+    description: "填写过程中内容会在当前浏览器自动暂存。完成全部 Profile 后，点击页面底部的“保存配置”，正式提供给你的 Agent。",
   },
 ];
 

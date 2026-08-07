@@ -126,6 +126,24 @@ async function request(path, { token, method = "GET", body, expected = 200 } = {
   return payload;
 }
 
+function readStoredZipEntries(buffer) {
+  const entries = new Map();
+  let offset = 0;
+  while (buffer.readUInt32LE(offset) === 0x04034b50) {
+    const method = buffer.readUInt16LE(offset + 8);
+    const size = buffer.readUInt32LE(offset + 18);
+    const nameLength = buffer.readUInt16LE(offset + 26);
+    const extraLength = buffer.readUInt16LE(offset + 28);
+    assert.equal(method, 0, "test parser expects uncompressed ZIP entries");
+    const nameStart = offset + 30;
+    const dataStart = nameStart + nameLength + extraLength;
+    const name = buffer.subarray(nameStart, nameStart + nameLength).toString("utf8");
+    entries.set(name, buffer.subarray(dataStart, dataStart + size));
+    offset = dataStart + size;
+  }
+  return entries;
+}
+
 async function login(id) {
   const result = await request("/api/login", {
     method: "POST",
@@ -385,6 +403,26 @@ try {
 
   const history = await request("/api/sessions", { token: admin.token });
   assert.equal(history.sessions.length, 3);
+  await request("/api/export/all.zip", { token: p1a.token, expected: 403 });
+  const exportResponse = await fetch(`${base}/api/export/all.zip`, {
+    headers: { Authorization: `Bearer ${admin.token}` },
+  });
+  assert.equal(exportResponse.status, 200);
+  assert.equal(exportResponse.headers.get("content-type"), "application/zip");
+  assert.match(exportResponse.headers.get("content-disposition"), /proxylab-records-\d{4}-\d{2}-\d{2}\.zip/);
+  const archive = Buffer.from(await exportResponse.arrayBuffer());
+  assert.equal(archive.readUInt32LE(0), 0x04034b50);
+  const archiveEntries = readStoredZipEntries(archive);
+  assert.equal(archiveEntries.has("manifest.json"), true);
+  assert.equal(archiveEntries.has("participants.json"), true);
+  assert.equal(archiveEntries.has("profile-schemas.json"), true);
+  assert.equal(archiveEntries.has("model-config-without-api-keys.json"), true);
+  assert.equal([...archiveEntries.keys()].filter((name) => /^sessions\/\d+_.+\.json$/.test(name)).length, 3);
+  assert.equal(JSON.parse(archiveEntries.get("manifest.json")).apiKeysIncluded, false);
+  const exportedModels = JSON.parse(archiveEntries.get("model-config-without-api-keys.json"));
+  assert.equal(exportedModels.agent1.apiKey, "");
+  assert.equal(exportedModels.agent2.apiKey, "");
+  assert.equal(archive.includes(Buffer.from('"apiKey": "test"')), false);
   await request(`/api/sessions/${sessionId}`, { token: p1a.token, method: "DELETE", expected: 403 });
   const deleted = await request(`/api/sessions/${sessionId}`, { token: admin.token, method: "DELETE" });
   assert.equal(deleted.ok, true);
@@ -392,7 +430,7 @@ try {
   await request(`/api/sessions/${task3Created.session.id}`, { token: admin.token, method: "DELETE" });
   const emptyHistory = await request("/api/sessions", { token: admin.token });
   assert.equal(emptyHistory.sessions.length, 0);
-  console.log("Smoke test passed: first-login consent gate, admin_arklab direct login, fixed structured recaps, matching A/B sections, concise filtering, hidden two-stage completion, Task 2 requirements, annotations, decisions, workflow, history, and deletion.");
+  console.log("Smoke test passed: consent, profiles, sessions, structured recaps, annotations, workflow, admin ZIP export without API keys, history, and deletion.");
 } finally {
   await close(appServer);
   await close(mock);

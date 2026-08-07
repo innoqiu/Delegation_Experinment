@@ -4,6 +4,35 @@ import { ChoiceGrid, Field, TextArea, TextInput } from "../components/FormContro
 import { Icon } from "../components/Icons.jsx";
 
 const TASK_KEYS = ["task1", "task2", "task3"];
+const PROFILE_DRAFT_VERSION = 1;
+
+function profileDraftKey(participantId) {
+  return `proxylab_profile_draft_v${PROFILE_DRAFT_VERSION}:${participantId}`;
+}
+
+function readProfileDraft(participantId) {
+  try {
+    const draft = JSON.parse(localStorage.getItem(profileDraftKey(participantId)) || "null");
+    return draft?.profiles && typeof draft.profiles === "object" ? draft.profiles : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeProfileDraft(participantId, profiles) {
+  try {
+    localStorage.setItem(profileDraftKey(participantId), JSON.stringify({
+      savedAt: new Date().toISOString(),
+      profiles,
+    }));
+  } catch {
+    // The form remains usable if private browsing or storage policy blocks drafts.
+  }
+}
+
+function clearProfileDraft(participantId) {
+  try { localStorage.removeItem(profileDraftKey(participantId)); } catch { /* no-op */ }
+}
 const STUDY_INTENT_PLACEHOLDERS = {
   task1: {
     authorizationIntent: "例如：可以替我筛选和比较计划，但最终地点、费用与预订必须由我确认。",
@@ -116,6 +145,7 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
   const [profiles, setProfiles] = useState(emptyProfiles());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [draftDirty, setDraftDirty] = useState(false);
   const [revisionSession, setRevisionSession] = useState(null);
   const [lastRevision, setLastRevision] = useState(null);
   const readOnly = user.role === "admin";
@@ -139,10 +169,19 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
     if (!selectedId || !schemas) { if (schemas) setLoading(false); return; }
     setLoading(true);
     api(`/api/profiles/${selectedId}`)
-      .then(({ participant }) => setProfiles({ ...emptyProfiles(schemas), ...(participant.profiles || {}) }))
+      .then(({ participant }) => {
+        const savedProfiles = { ...emptyProfiles(schemas), ...(participant.profiles || {}) };
+        const draft = readOnly ? null : readProfileDraft(selectedId);
+        setProfiles(draft ? { ...savedProfiles, ...draft } : savedProfiles);
+        setDraftDirty(Boolean(draft));
+      })
       .catch((error) => notify(error.message, "error"))
       .finally(() => setLoading(false));
-  }, [notify, schemas, selectedId]);
+  }, [notify, readOnly, schemas, selectedId]);
+
+  useEffect(() => {
+    if (!readOnly && selectedId && draftDirty) writeProfileDraft(selectedId, profiles);
+  }, [draftDirty, profiles, readOnly, selectedId]);
 
   useEffect(() => {
     if (!revisionSessionId) {
@@ -155,35 +194,46 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
       .catch((error) => notify(error.message, "error"));
   }, [notify, revisionSessionId]);
 
-  const update = (task, key, value) => setProfiles((current) => ({
-    ...current,
-    [task]: { ...current[task], [key]: value },
-  }));
+  const update = (task, key, valueOrUpdater) => {
+    setDraftDirty(true);
+    setProfiles((current) => ({
+      ...current,
+      [task]: {
+        ...current[task],
+        [key]: typeof valueOrUpdater === "function" ? valueOrUpdater(current[task]?.[key]) : valueOrUpdater,
+      },
+    }));
+  };
 
-  const updateStudyIntent = (task, key, value) => setProfiles((current) => ({
-    ...current,
-    [task]: {
-      ...current[task],
-      studyIntent: { ...(current[task]?.studyIntent || {}), [key]: value },
-    },
-  }));
+  const updateStudyIntent = (task, key, value) => {
+    setDraftDirty(true);
+    setProfiles((current) => ({
+      ...current,
+      [task]: {
+        ...current[task],
+        studyIntent: { ...(current[task]?.studyIntent || {}), [key]: value },
+      },
+    }));
+  };
 
-  const addCustomField = (task) => update(task, "customFields", [
-    ...(profiles[task]?.customFields || []),
+  const addCustomField = (task) => update(task, "customFields", (fields = []) => [
+    ...fields,
     { id: crypto.randomUUID(), label: "", value: "" },
   ]);
 
-  const updateCustomField = (task, id, key, value) => update(task, "customFields", (profiles[task]?.customFields || []).map((field) => (
+  const updateCustomField = (task, id, key, value) => update(task, "customFields", (fields = []) => fields.map((field) => (
     field.id === id ? { ...field, [key]: value } : field
   )));
 
-  const removeCustomField = (task, id) => update(task, "customFields", (profiles[task]?.customFields || []).filter((field) => field.id !== id));
+  const removeCustomField = (task, id) => update(task, "customFields", (fields = []) => fields.filter((field) => field.id !== id));
 
   async function save() {
     setSaving(true);
     try {
       const result = await api(`/api/profiles/${selectedId}`, { method: "PUT", body: jsonBody({ profiles }) });
       setProfiles(result.participant.profiles);
+      clearProfileDraft(selectedId);
+      setDraftDirty(false);
       if (revisionSessionId) {
         const revisionResult = await api(`/api/sessions/${revisionSessionId}/config-revisions`, { method: "POST", body: jsonBody({}) });
         setLastRevision(revisionResult.revision);
@@ -210,7 +260,6 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
         <div className="page-actions">
           {readOnly && <select className="select participant-select" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{participants.map((participant) => <option key={participant.id}>{participant.id}</option>)}</select>}
           {revisionSession ? <button className="button button-ghost" onClick={() => onNavigate("recaps", { selectedSessionId: revisionSession.id })}>返回Recap</button> : null}
-          {!readOnly && <button className="button button-primary" onClick={save} disabled={saving}><Icon name="save" size={17} />{saving ? "保存中…" : revisionSession ? "保存并记录diff" : "保存配置"}</button>}
         </div>
       </div>
 
@@ -240,6 +289,18 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
           ))}
         </div>
       )}
+      {!readOnly && selectedId ? (
+        <div className="profile-save-footer">
+          <div className="profile-draft-status" aria-live="polite">
+            <Icon name={draftDirty ? "clock" : "check"} size={17} />
+            <span>{draftDirty ? "未保存内容已暂存于当前浏览器；切换页面后仍可继续填写。" : "当前配置已保存。"}</span>
+          </div>
+          <button className="button button-primary" onClick={save} disabled={saving}>
+            <Icon name="save" size={17} />
+            {saving ? "保存中…" : revisionSession ? "保存并记录diff" : "保存配置"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
