@@ -1715,7 +1715,7 @@ async function handleApi(req, res, url) {
     const participantId = auth.role === "admin" ? normalizeParticipantId(body.participantId) : auth.id;
     if (![session.participantA, session.participantB].includes(participantId)) throw httpError(400, "参与者不属于此会话");
     const stage = String(body.stage || "");
-    if (!["reentry", "interview"].includes(stage)) throw httpError(400, "未知流程阶段");
+    if (!["discussion_preparation", "reentry", "interview"].includes(stage)) throw httpError(400, "未知流程阶段");
     const allowedOutcomes = ["ratified", "revised", "rejected", "repaired", "unresolved", "completed"];
     const outcome = String(body.outcome || "completed");
     if (!allowedOutcomes.includes(outcome)) throw httpError(400, "未知流程结果");

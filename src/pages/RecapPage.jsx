@@ -153,44 +153,23 @@ function RevisionSummary({ revision }) {
 function FollowUpFlow({ session, user, onNavigate, onWorkflowSaved, notify }) {
   const revisions = session.configurationRevisions?.[user.id] || [];
   const latestRevision = revisions.at(-1);
-  const savedReentry = session.workflow?.[user.id]?.reentry;
-  const savedInterview = session.workflow?.[user.id]?.interview;
-  const [outcome, setOutcome] = useState(savedReentry?.outcome || "ratified");
-  const [note, setNote] = useState(savedReentry?.note || "");
-  const [interviewNote, setInterviewNote] = useState(savedInterview?.note || "");
+  const savedPreparation = session.workflow?.[user.id]?.discussion_preparation;
+  const [note, setNote] = useState(savedPreparation?.note || "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setOutcome(savedReentry?.outcome || "ratified");
-    setNote(savedReentry?.note || "");
-    setInterviewNote(savedInterview?.note || "");
-  }, [session.id, savedReentry?.updatedAt, savedInterview?.updatedAt]);
+    setNote(savedPreparation?.note || "");
+  }, [session.id, savedPreparation?.updatedAt]);
 
-  async function saveReentry() {
+  async function savePreparation() {
     setSaving(true);
     try {
       const result = await api(`/api/sessions/${session.id}/workflow`, {
         method: "POST",
-        body: jsonBody({ stage: "reentry", outcome, note }),
+        body: jsonBody({ stage: "discussion_preparation", outcome: "completed", note }),
       });
       onWorkflowSaved(result.workflow);
-      notify("真人re-entry讨论结果已保存");
-    } catch (error) {
-      notify(error.message, "error");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveInterview() {
-    setSaving(true);
-    try {
-      const result = await api(`/api/sessions/${session.id}/workflow`, {
-        method: "POST",
-        body: jsonBody({ stage: "interview", outcome: "completed", note: interviewNote }),
-      });
-      onWorkflowSaved(result.workflow);
-      notify("访谈记录已保存");
+      notify("真人讨论准备已保存");
     } catch (error) {
       notify(error.message, "error");
     } finally {
@@ -200,31 +179,26 @@ function FollowUpFlow({ session, user, onNavigate, onWorkflowSaved, notify }) {
 
   return (
     <section className="follow-up-flow">
-      <div className="panel-heading"><div><h2>后续研究流程</h2><p>完成配置回看后，由两位principal进行真人讨论，再进入访谈。</p></div></div>
-      <div className="follow-up-grid">
+      <div className="panel-heading"><div><h2>后续研究流程</h2><p>完成配置回看和讨论准备后，你将与另一位参与者进行真人讨论，再进入访谈。</p></div></div>
+      <div className="follow-up-grid follow-up-grid-single">
         <div className="follow-up-card">
-          <span className="step-number">1</span><h3>返回配置并记录差异</h3>
+          <h3>配置回看与真人讨论准备</h3>
+          <p>请先回看本任务的配置。你可以保留原配置，也可以根据代理互动的结果进行修改。</p>
           <RevisionSummary revision={latestRevision} />
-          <button type="button" className="button button-secondary" onClick={() => onNavigate("profiles", { revisionSessionId: session.id, task: session.task })}>返回本任务配置</button>
-        </div>
-        <div className="follow-up-card">
-          <span className="step-number">2</span><h3>真人re-entry讨论</h3>
-          <select className="select" value={outcome} onChange={(event) => setOutcome(event.target.value)}>
-            <option value="ratified">共同批准代理结果</option>
-            <option value="revised">共同修改结果</option>
-            <option value="rejected">拒绝代理结果</option>
-            <option value="repaired">进行了澄清或关系修复</option>
-            <option value="unresolved">仍未解决</option>
-          </select>
-          <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="记录讨论中出现的澄清、修改、拒绝、修复或重新承诺" />
-          <button type="button" className="button button-primary" onClick={saveReentry} disabled={saving}>{saving ? "保存中…" : "保存讨论结果"}</button>
-          {savedReentry ? <small>上次保存：{formatDate(savedReentry.updatedAt)}</small> : null}
-        </div>
-        <div className="follow-up-card">
-          <span className="step-number">3</span><h3>访谈</h3><p>使用文字标记、section决定、配置diff和re-entry记录进行刺激回忆访谈。</p>
-          <textarea value={interviewNote} onChange={(event) => setInterviewNote(event.target.value)} placeholder="记录访谈备注或关键反思" />
-          <button type="button" className="button button-secondary" onClick={saveInterview} disabled={saving}>{saving ? "保存中…" : "保存访谈记录"}</button>
-          {savedInterview ? <small>上次保存：{formatDate(savedInterview.updatedAt)}</small> : null}
+          <button type="button" className="button button-secondary follow-up-config-button" onClick={() => onNavigate("profiles", { revisionSessionId: session.id, task: session.task })}>回看／修改本任务配置</button>
+          <div className="discussion-preparation">
+            <strong>为真人讨论做准备</strong>
+            <p>接下来，你将与另一位参与者进行真人讨论；此前，你们的代理已经彼此沟通过。请先独立记录你希望在讨论中确认或处理的事项，不必现在与对方讨论。</p>
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="例如：仍未解决的问题；想向对方确认或澄清的内容；希望修改或撤回由代理作出的承诺；以及接下来准备做什么。"
+            />
+            <div className="discussion-preparation-actions">
+              <button type="button" className="button button-primary" onClick={savePreparation} disabled={saving}>{saving ? "保存中…" : "保存讨论准备"}</button>
+              {savedPreparation ? <small>上次保存：{formatDate(savedPreparation.updatedAt)}</small> : null}
+            </div>
+          </div>
         </div>
       </div>
     </section>

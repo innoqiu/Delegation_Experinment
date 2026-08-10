@@ -359,6 +359,12 @@ try {
   assert.equal(revision.revision.diff.some(({ path }) => path === "interests"), true);
   assert.equal(revision.revision.diff.some(({ path }) => path === "studyIntent.desiredUnderstanding"), true);
 
+  const discussionPreparation = await request(`/api/sessions/${sessionId}/workflow`, {
+    token: p1a.token,
+    method: "POST",
+    body: { stage: "discussion_preparation", outcome: "completed", note: "需要确认候选方案，并澄清代理是否有权接受" },
+  });
+  assert.equal(discussionPreparation.workflow.discussion_preparation.note, "需要确认候选方案，并澄清代理是否有权接受");
   const reentry = await request(`/api/sessions/${sessionId}/workflow`, {
     token: p1a.token,
     method: "POST",

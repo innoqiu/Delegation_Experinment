@@ -345,11 +345,17 @@ p { color: var(--muted); line-height: 1.55; }
 .recap-transcript > .transcript { max-height: 600px; overflow: auto; padding: 16px; }
 .follow-up-flow { margin-top: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
 .follow-up-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px; }
+.follow-up-grid-single { grid-template-columns: minmax(0, 1fr); }
 .follow-up-card { min-width: 0; display: grid; align-content: start; gap: 9px; padding: 13px; border: 1px solid var(--border); border-radius: var(--radius); background: #fbfcfe; }
 .follow-up-card.muted { background: #f6f7f9; }
 .follow-up-card h3 { margin: 0; font-size: 13px; }
 .follow-up-card p { margin: 0; font-size: 11px; }
 .follow-up-card small { color: var(--faint); font-size: 9px; }
+.follow-up-config-button { width: max-content; }
+.discussion-preparation { display: grid; gap: 8px; margin-top: 4px; padding-top: 13px; border-top: 1px solid var(--border); }
+.discussion-preparation > strong { color: #313a49; font-size: 12px; }
+.discussion-preparation textarea { min-height: 112px; font-size: 12px; line-height: 1.55; }
+.discussion-preparation-actions { display: flex; align-items: center; gap: 10px; }
 .step-number { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--blue); font-size: 10px; font-weight: 750; }
 .revision-diff-list { display: grid; gap: 7px; }
 .revision-diff-row { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: #fff; font-size: 10px; }
@@ -498,6 +504,8 @@ p { color: var(--muted); line-height: 1.55; }
   .search-box { grid-column: 1 / -1; }
   .history-export { grid-column: 1 / -1; }
   .profile-save-footer { align-items: stretch; flex-direction: column; }
+  .follow-up-config-button { width: 100%; }
+  .discussion-preparation-actions { align-items: stretch; flex-direction: column; }
   .history-table th:nth-child(2), .history-table td:nth-child(2), .history-table th:nth-child(4), .history-table td:nth-child(4), .history-table th:nth-child(6), .history-table td:nth-child(6), .history-table th:nth-child(7), .history-table td:nth-child(7), .history-table th:nth-child(8), .history-table td:nth-child(8) { display: none; }
   .message-row, .message-row.right { grid-template-columns: 1fr; }
   .message-row.right .speaker-label, .message-row.right .message-wrap { grid-column: 1; grid-row: auto; text-align: left; }
