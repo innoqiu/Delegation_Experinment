@@ -6,22 +6,25 @@ import { Icon } from "../components/Icons.jsx";
 const TASK_KEYS = ["task1", "task2", "task3"];
 const PROFILE_DRAFT_VERSION = 1;
 
-function profileDraftKey(participantId) {
-  return `proxylab_profile_draft_v${PROFILE_DRAFT_VERSION}:${participantId}`;
+function profileDraftKey(participantId, revisionSessionId = "") {
+  const scope = revisionSessionId ? `revision:${revisionSessionId}` : "base";
+  return `proxylab_profile_draft_v${PROFILE_DRAFT_VERSION}:${participantId}:${scope}`;
 }
 
-function readProfileDraft(participantId) {
+function readProfileDraft(participantId, revisionSessionId = "") {
   try {
-    const draft = JSON.parse(localStorage.getItem(profileDraftKey(participantId)) || "null");
+    const stored = localStorage.getItem(profileDraftKey(participantId, revisionSessionId))
+      || (!revisionSessionId ? localStorage.getItem(`proxylab_profile_draft_v${PROFILE_DRAFT_VERSION}:${participantId}`) : null);
+    const draft = JSON.parse(stored || "null");
     return draft?.profiles && typeof draft.profiles === "object" ? draft.profiles : null;
   } catch {
     return null;
   }
 }
 
-function writeProfileDraft(participantId, profiles) {
+function writeProfileDraft(participantId, profiles, revisionSessionId = "") {
   try {
-    localStorage.setItem(profileDraftKey(participantId), JSON.stringify({
+    localStorage.setItem(profileDraftKey(participantId, revisionSessionId), JSON.stringify({
       savedAt: new Date().toISOString(),
       profiles,
     }));
@@ -30,8 +33,11 @@ function writeProfileDraft(participantId, profiles) {
   }
 }
 
-function clearProfileDraft(participantId) {
-  try { localStorage.removeItem(profileDraftKey(participantId)); } catch { /* no-op */ }
+function clearProfileDraft(participantId, revisionSessionId = "") {
+  try {
+    localStorage.removeItem(profileDraftKey(participantId, revisionSessionId));
+    if (!revisionSessionId) localStorage.removeItem(`proxylab_profile_draft_v${PROFILE_DRAFT_VERSION}:${participantId}`);
+  } catch { /* no-op */ }
 }
 const STUDY_INTENT_PLACEHOLDERS = {
   task1: {
@@ -56,11 +62,12 @@ function emptyProfiles(schemas = {}) {
   }]));
 }
 
-function Section({ number, schema, children }) {
+function Section({ number, schema, action, className = "", children }) {
   return (
-    <section className="profile-section">
+    <section className={`profile-section ${className}`}>
       <div className="section-heading">
         <div><h2>Profile {number}：{schema.title}</h2><p>{schema.description}</p></div>
+        {action}
       </div>
       {children}
     </section>
@@ -128,6 +135,26 @@ function StudyIntentFields({ task, value = {}, readOnly, onChange }) {
   );
 }
 
+function ProfileFields({ task, schema, profile, readOnly, onUpdate, onStudyIntentUpdate, onAddCustomField, onUpdateCustomField, onRemoveCustomField }) {
+  return (
+    <>
+      <StudyIntentFields task={task} value={profile?.studyIntent} readOnly={readOnly} onChange={onStudyIntentUpdate} />
+      <div className="form-grid three-columns">
+        {schema.fields.map((field) => (
+          <SchemaField key={field.key} field={field} value={profile?.[field.key]} readOnly={readOnly} onChange={(value) => onUpdate(field.key, value)} />
+        ))}
+      </div>
+      <CustomProfileFields
+        fields={profile?.customFields || []}
+        readOnly={readOnly}
+        onAdd={onAddCustomField}
+        onChange={onUpdateCustomField}
+        onRemove={onRemoveCustomField}
+      />
+    </>
+  );
+}
+
 function RevisionResult({ revision }) {
   if (!revision) return null;
   return (
@@ -148,6 +175,10 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
   const [draftDirty, setDraftDirty] = useState(false);
   const [revisionSession, setRevisionSession] = useState(null);
   const [lastRevision, setLastRevision] = useState(null);
+  const [revisionPassword, setRevisionPassword] = useState("");
+  const [revisionUnlocked, setRevisionUnlocked] = useState(false);
+  const [revisionEnabled, setRevisionEnabled] = useState({});
+  const [unlocking, setUnlocking] = useState(false);
   const readOnly = user.role === "admin";
   const revisionSessionId = user.role === "participant" ? pageContext?.revisionSessionId : null;
 
@@ -171,7 +202,7 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
     api(`/api/profiles/${selectedId}`)
       .then(({ participant }) => {
         const savedProfiles = { ...emptyProfiles(schemas), ...(participant.profiles || {}) };
-        const draft = readOnly ? null : readProfileDraft(selectedId);
+        const draft = readOnly || revisionSessionId ? null : readProfileDraft(selectedId);
         setProfiles(draft ? { ...savedProfiles, ...draft } : savedProfiles);
         setDraftDirty(Boolean(draft));
       })
@@ -180,19 +211,48 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
   }, [notify, readOnly, schemas, selectedId]);
 
   useEffect(() => {
-    if (!readOnly && selectedId && draftDirty) writeProfileDraft(selectedId, profiles);
-  }, [draftDirty, profiles, readOnly, selectedId]);
+    if (!readOnly && selectedId && draftDirty) writeProfileDraft(selectedId, profiles, revisionSessionId || "");
+  }, [draftDirty, profiles, readOnly, revisionSessionId, selectedId]);
 
   useEffect(() => {
     if (!revisionSessionId) {
       setRevisionSession(null);
       setLastRevision(null);
+      setRevisionUnlocked(false);
+      setRevisionPassword("");
+      setRevisionEnabled({});
       return;
     }
     api(`/api/sessions/${revisionSessionId}`)
-      .then(({ session }) => setRevisionSession(session))
+      .then(({ session }) => {
+        setRevisionSession(session);
+        const latest = session.configurationRevisions?.[user.id]?.at(-1) || null;
+        const original = session.profileSnapshot?.[user.id] || {};
+        const draft = readProfileDraft(user.id, revisionSessionId);
+        const revised = draft?.[session.task] || latest?.revisedProfile || original;
+        setProfiles((current) => ({ ...current, [session.task]: revised }));
+        setDraftDirty(Boolean(draft));
+        setLastRevision(latest);
+      })
       .catch((error) => notify(error.message, "error"));
-  }, [notify, revisionSessionId]);
+  }, [notify, revisionSessionId, user.id]);
+
+  async function unlockRevision() {
+    if (!revisionSessionId || !revisionPassword) return;
+    setUnlocking(true);
+    try {
+      await api(`/api/sessions/${revisionSessionId}/reconfiguration-access`, {
+        method: "POST",
+        body: jsonBody({ password: revisionPassword }),
+      });
+      setRevisionUnlocked(true);
+      notify("再配置已解锁；使用卡片右侧开关开始对照修改");
+    } catch (error) {
+      notify(error.message, "error");
+    } finally {
+      setUnlocking(false);
+    }
+  }
 
   const update = (task, key, valueOrUpdater) => {
     setDraftDirty(true);
@@ -230,15 +290,21 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
   async function save() {
     setSaving(true);
     try {
-      const result = await api(`/api/profiles/${selectedId}`, { method: "PUT", body: jsonBody({ profiles }) });
-      setProfiles(result.participant.profiles);
-      clearProfileDraft(selectedId);
-      setDraftDirty(false);
       if (revisionSessionId) {
-        const revisionResult = await api(`/api/sessions/${revisionSessionId}/config-revisions`, { method: "POST", body: jsonBody({}) });
+        if (!revisionUnlocked) throw new Error("请先输入再配置密码");
+        const revisionResult = await api(`/api/sessions/${revisionSessionId}/config-revisions`, {
+          method: "POST",
+          body: jsonBody({ password: revisionPassword, revisedProfile: profiles[revisionSession.task] }),
+        });
         setLastRevision(revisionResult.revision);
-        notify("配置已保存，并记录了相对于本次代理互动原始配置的差异");
+        clearProfileDraft(selectedId, revisionSessionId);
+        setDraftDirty(false);
+        notify("修改副本已保存；本次会话的原配置保持不变");
       } else {
+        const result = await api(`/api/profiles/${selectedId}`, { method: "PUT", body: jsonBody({ profiles }) });
+        setProfiles(result.participant.profiles);
+        clearProfileDraft(selectedId);
+        setDraftDirty(false);
         notify("Agent 配置已保存");
       }
     } catch (error) {
@@ -250,6 +316,9 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
 
   const title = useMemo(() => readOnly ? `查看受试者 ${selectedId || "—"} 的配置` : `${selectedId} 的 Agent 配置`, [readOnly, selectedId]);
   const visibleTasks = revisionSession ? [revisionSession.task] : TASK_KEYS;
+  const effectiveSchemas = revisionSession
+    ? { ...(schemas || {}), [revisionSession.task]: revisionSession.profileSchemaSnapshot || schemas?.[revisionSession.task] }
+    : schemas;
 
   if (loading || !schemas) return <div className="screen-center"><div className="loader" />正在读取配置…</div>;
 
@@ -264,32 +333,83 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
       </div>
 
       {revisionSession ? (
-        <div className="revision-mode-banner"><strong>配置回看模式</strong><span>你正在回看 {revisionSession.recordName} 使用的原始配置。保存后，系统会记录当前配置相对于会话快照的字段级差异。</span></div>
+        <div className="revision-access-panel">
+          <div className="revision-mode-banner"><strong>配置回看模式</strong><span>你正在回看 {revisionSession.recordName} 使用的原始配置。修改会保存为独立副本，不会覆盖原始 Profile。</span></div>
+          <div className="revision-password-row">
+            <label><span>再配置密码</span><TextInput type="password" value={revisionPassword} onChange={(event) => setRevisionPassword(event.target.value)} placeholder="请输入实验员提供的密码" disabled={revisionUnlocked} /></label>
+            <button type="button" className={`button ${revisionUnlocked ? "button-success" : "button-primary"}`} onClick={unlockRevision} disabled={revisionUnlocked || unlocking || !revisionPassword}>{revisionUnlocked ? "已解锁" : unlocking ? "验证中…" : "解锁再配置"}</button>
+          </div>
+        </div>
       ) : null}
       <RevisionResult revision={lastRevision} />
 
       {!selectedId ? <div className="empty-state">还没有参与者登录。</div> : (
         <div className="profile-form">
           {visibleTasks.map((task) => (
-            <Section key={task} number={TASK_KEYS.indexOf(task) + 1} schema={schemas[task]}>
-              <StudyIntentFields task={task} value={profiles[task]?.studyIntent} readOnly={readOnly} onChange={(key, value) => updateStudyIntent(task, key, value)} />
-              <div className="form-grid three-columns">
-                {schemas[task].fields.map((field) => (
-                  <SchemaField key={field.key} field={field} value={profiles[task]?.[field.key]} readOnly={readOnly} onChange={(value) => update(task, field.key, value)} />
-                ))}
-              </div>
-              <CustomProfileFields
-                fields={profiles[task]?.customFields || []}
-                readOnly={readOnly}
-                onAdd={() => addCustomField(task)}
-                onChange={(id, key, value) => updateCustomField(task, id, key, value)}
-                onRemove={(id) => removeCustomField(task, id)}
-              />
+            <Section
+              key={task}
+              number={TASK_KEYS.indexOf(task) + 1}
+              schema={effectiveSchemas[task]}
+              className={revisionSession ? "profile-section-revision" : ""}
+              action={revisionSession && revisionUnlocked ? (
+                <label className="revision-slide-toggle">
+                  <span>{revisionEnabled[task] ? "正在对照修改" : "开启对照修改"}</span>
+                  <input type="checkbox" role="switch" checked={Boolean(revisionEnabled[task])} onChange={(event) => setRevisionEnabled((current) => ({ ...current, [task]: event.target.checked }))} />
+                  <i aria-hidden="true" />
+                </label>
+              ) : null}
+            >
+              {revisionSession ? (
+                <div className={`profile-comparison-grid ${revisionEnabled[task] ? "editing" : "locked"}`}>
+                  <div className="profile-version-panel profile-version-original">
+                    <div className="profile-version-heading"><span>原配置</span><small>本次代理互动实际使用 · 只读</small></div>
+                    <ProfileFields
+                      task={task}
+                      schema={effectiveSchemas[task]}
+                      profile={revisionSession.profileSnapshot?.[user.id] || {}}
+                      readOnly
+                      onUpdate={() => {}}
+                      onStudyIntentUpdate={() => {}}
+                      onAddCustomField={() => {}}
+                      onUpdateCustomField={() => {}}
+                      onRemoveCustomField={() => {}}
+                    />
+                  </div>
+                  {revisionEnabled[task] ? (
+                    <div className="profile-version-panel profile-version-revised">
+                      <div className="profile-version-heading"><span>修改副本</span><small>只记录变化，不覆盖原配置</small></div>
+                      <ProfileFields
+                        task={task}
+                        schema={effectiveSchemas[task]}
+                        profile={profiles[task]}
+                        readOnly={readOnly}
+                        onUpdate={(key, value) => update(task, key, value)}
+                        onStudyIntentUpdate={(key, value) => updateStudyIntent(task, key, value)}
+                        onAddCustomField={() => addCustomField(task)}
+                        onUpdateCustomField={(id, key, value) => updateCustomField(task, id, key, value)}
+                        onRemoveCustomField={(id) => removeCustomField(task, id)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <ProfileFields
+                  task={task}
+                  schema={effectiveSchemas[task]}
+                  profile={profiles[task]}
+                  readOnly={readOnly}
+                  onUpdate={(key, value) => update(task, key, value)}
+                  onStudyIntentUpdate={(key, value) => updateStudyIntent(task, key, value)}
+                  onAddCustomField={() => addCustomField(task)}
+                  onUpdateCustomField={(id, key, value) => updateCustomField(task, id, key, value)}
+                  onRemoveCustomField={(id) => removeCustomField(task, id)}
+                />
+              )}
             </Section>
           ))}
         </div>
       )}
-      {!readOnly && selectedId ? (
+      {!readOnly && selectedId && (!revisionSession || revisionUnlocked) ? (
         <div className="profile-save-footer">
           <div className="profile-draft-status" aria-live="polite">
             <Icon name={draftDirty ? "clock" : "check"} size={17} />
@@ -297,7 +417,7 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
           </div>
           <button className="button button-primary" onClick={save} disabled={saving}>
             <Icon name="save" size={17} />
-            {saving ? "保存中…" : revisionSession ? "保存并记录diff" : "保存配置"}
+            {saving ? "保存中…" : revisionSession ? "保存修改副本与 diff" : "保存配置"}
           </button>
         </div>
       ) : null}

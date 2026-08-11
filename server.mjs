@@ -15,6 +15,7 @@ const COMPLETION_PHRASE = "我认为任务已完成申请结束";
 const PRIVATE_AUDIT_READY = "READY_TO_CLOSE";
 const ADMIN_ACCESS_CODE = String(process.env.ADMIN_ACCESS_CODE || "").trim();
 const ADMIN_LOGIN_ID = "ADMIN_ARKLAB";
+const PROFILE_REVISION_PASSWORD = String(process.env.PROFILE_REVISION_PASSWORD || "reentry").trim();
 const CONSENT_VERSION = "HKUSTGZ-HSP-2026-0135-v1";
 const CONSENT_INFO = {
   version: CONSENT_VERSION,
@@ -856,6 +857,54 @@ function profileRevisionDiff(before = {}, after = {}, schema = {}) {
   return rows;
 }
 
+function sanitizeRevisionProfile(source = {}, schema = {}) {
+  const result = {
+    studyIntent: {
+      authorizationIntent: String(source.studyIntent?.authorizationIntent || "").slice(0, 5000),
+      desiredUnderstanding: String(source.studyIntent?.desiredUnderstanding || "").slice(0, 5000),
+    },
+    customFields: [],
+  };
+  for (const field of schema.fields || []) {
+    const value = source[field.key];
+    if (field.type === "multiselect") {
+      const allowed = new Set((field.options || []).map((option) => option.value));
+      result[field.key] = Array.from(new Set(Array.isArray(value) ? value : []))
+        .map((item) => String(item).slice(0, 200))
+        .filter((item) => allowed.has(item))
+        .slice(0, 20);
+    } else if (field.type === "number") {
+      if (value === "" || value === null || value === undefined || !Number.isFinite(Number(value))) result[field.key] = "";
+      else {
+        let numeric = Number(value);
+        if (field.min !== undefined) numeric = Math.max(field.min, numeric);
+        if (field.max !== undefined) numeric = Math.min(field.max, numeric);
+        result[field.key] = numeric;
+      }
+    } else {
+      result[field.key] = String(value ?? "").slice(0, 5000);
+    }
+  }
+  const seenIds = new Set();
+  result.customFields = (Array.isArray(source.customFields) ? source.customFields : []).slice(0, 20).map((item) => {
+    let id = String(item?.id || "").trim().slice(0, 80);
+    if (!/^[A-Za-z0-9_-]+$/.test(id) || seenIds.has(id)) id = randomUUID();
+    seenIds.add(id);
+    return {
+      id,
+      label: String(item?.label || "").trim().slice(0, 120),
+      value: String(item?.value || "").slice(0, 5000),
+    };
+  });
+  return result;
+}
+
+function verifyRevisionPassword(value) {
+  if (!PROFILE_REVISION_PASSWORD || String(value || "") !== PROFILE_REVISION_PASSWORD) {
+    throw httpError(403, "再配置密码错误");
+  }
+}
+
 function deriveOverallDecision(sectionDecisions = {}) {
   const values = Object.values(sectionDecisions).map((item) => item.value);
   if (!values.length) return null;
@@ -1619,7 +1668,7 @@ async function handleApi(req, res, url) {
       if (!session.recaps?.[targetId]) throw httpError(400, "Recap不存在");
       if (auth.role !== "admin" && targetId !== auth.id) throw httpError(403, "只能标注自己的Recap");
     }
-    const allowedTags = new Set(["important", "unexpected", "uncomfortable", "details_requested"]);
+    const allowedTags = new Set(["important", "unexpected", "uncomfortable", "details_requested", "trust_decreased", "trust_increased", "agent_overreach"]);
     const tags = Array.from(new Set(Array.isArray(body.tags) ? body.tags : []))
       .filter((tag) => allowedTags.has(tag));
     if (targetType !== "recap" && tags.includes("details_requested")) {
@@ -1646,6 +1695,30 @@ async function handleApi(req, res, url) {
     session.annotations.push(annotation);
     persist();
     return json(res, 201, { annotation: clone(annotation) });
+  }
+
+  const annotationCancelMatch = path.match(/^\/api\/sessions\/([^/]+)\/annotations\/cancel$/);
+  if (annotationCancelMatch && req.method === "POST") {
+    const auth = requireAuth(req);
+    const session = store.sessions.find((item) => item.id === annotationCancelMatch[1]);
+    if (!session || !canAccessSession(auth, session)) throw httpError(404, "记录不存在");
+    const body = await readJson(req);
+    const targetType = String(body.targetType || "");
+    const targetId = String(body.targetId || "").slice(0, 200);
+    const sectionId = String(body.sectionId || "").slice(0, 160);
+    if (!["recap", "message"].includes(targetType) || !targetId) throw httpError(400, "标注目标无效");
+    const cancelled = [];
+    for (const annotation of session.annotations || []) {
+      const owned = auth.role === "admin" || annotation.author === auth.id;
+      if (!owned || annotation.cancelledAt) continue;
+      if (annotation.targetType !== targetType || annotation.targetId !== targetId || String(annotation.sectionId || "") !== sectionId) continue;
+      annotation.cancelledAt = now();
+      annotation.cancelledBy = auth.id;
+      cancelled.push(clone(annotation));
+    }
+    if (!cancelled.length) throw httpError(404, "本段没有可取消的标记");
+    persist();
+    return json(res, 200, { annotations: cancelled });
   }
 
   const sectionDecisionMatch = path.match(/^\/api\/sessions\/([^/]+)\/section-decisions$/);
@@ -1679,21 +1752,36 @@ async function handleApi(req, res, url) {
     return json(res, 200, { recap: clone(recap) });
   }
 
+  const revisionAccessMatch = path.match(/^\/api\/sessions\/([^/]+)\/reconfiguration-access$/);
+  if (revisionAccessMatch && req.method === "POST") {
+    const auth = requireAuth(req);
+    if (auth.role !== "participant") throw httpError(403, "只有参与者可以进入再配置流程");
+    const session = store.sessions.find((item) => item.id === revisionAccessMatch[1]);
+    if (!session || !canAccessSession(auth, session)) throw httpError(404, "记录不存在");
+    const body = await readJson(req);
+    verifyRevisionPassword(body.password);
+    return json(res, 200, { unlocked: true, task: session.task });
+  }
+
   const revisionMatch = path.match(/^\/api\/sessions\/([^/]+)\/config-revisions$/);
   if (revisionMatch && req.method === "POST") {
     const auth = requireAuth(req);
     if (auth.role !== "participant") throw httpError(403, "只有参与者可以记录自己的配置修改");
     const session = store.sessions.find((item) => item.id === revisionMatch[1]);
     if (!session || !canAccessSession(auth, session)) throw httpError(404, "记录不存在");
-    const current = store.participants[auth.id]?.profiles?.[session.task] || {};
+    const body = await readJson(req);
+    verifyRevisionPassword(body.password);
     const original = session.profileSnapshot?.[auth.id] || {};
-    const diff = profileRevisionDiff(original, current, session.profileSchemaSnapshot || {});
+    const revisedProfile = sanitizeRevisionProfile(body.revisedProfile || original, session.profileSchemaSnapshot || {});
+    const diff = profileRevisionDiff(original, revisedProfile, session.profileSchemaSnapshot || {});
     const revision = {
       id: randomUUID(),
       participantId: auth.id,
       task: session.task,
       diff,
       noChanges: diff.length === 0,
+      originalProfile: clone(original),
+      revisedProfile,
       createdAt: now(),
     };
     session.configurationRevisions ||= {};
@@ -1721,10 +1809,16 @@ async function handleApi(req, res, url) {
     if (!allowedOutcomes.includes(outcome)) throw httpError(400, "未知流程结果");
     session.workflow ||= {};
     session.workflow[participantId] ||= {};
+    const preparationFields = stage === "discussion_preparation" ? {
+      counterpartExpectations: String(body.fields?.counterpartExpectations || "").slice(0, 5000),
+      counterpartImpression: String(body.fields?.counterpartImpression || "").slice(0, 5000),
+      followUpNotes: String(body.fields?.followUpNotes || body.note || "").slice(0, 5000),
+    } : null;
     session.workflow[participantId][stage] = {
       status: "completed",
       outcome,
-      note: String(body.note || "").slice(0, 5000),
+      note: preparationFields?.followUpNotes || String(body.note || "").slice(0, 5000),
+      ...(preparationFields ? { fields: preparationFields } : {}),
       updatedAt: now(),
       recordedBy: auth.id,
     };

@@ -18,7 +18,8 @@
 - 每个代理发言使用`P1A_T1_1`格式的会话内消息ID，并支持参与者/admin逐条评论。
 - 参与者可在每个已启用Profile中添加、命名和删除自定义实验条件；有内容的条目会加入对应代理与recap提示词。
 - 每次任务启动时冻结双方Profile快照，保证同一session中的提示词条件不会因后续编辑而变化。
-- 每次运行独立保存transcript、两个principal的结构化recap、模型与任务配置快照、文字标记、section级决定和后续流程记录。Recap由固定JSON schema约束，A/B使用完全相同的标题与字段，并过滤通用免责声明和重复事实。
+- 每次运行独立保存transcript、两个principal的结构化recap、模型与任务配置快照、文字标记和后续流程记录。文字标记分为内容反应、信任变化与代理越权三类；参与者可以取消某段标记，系统仍保留取消时间以支持研究审计。Recap由固定JSON schema约束，A/B使用完全相同的标题与字段，并过滤通用免责声明和重复事实。
+- Recap底部将真人讨论准备拆为对方预期、任务内第一印象和后续联系笔记三项。配置回看由`PROFILE_REVISION_PASSWORD`解锁，并以原配置／修改副本对照呈现；修改副本与字段级diff保存在session中，不覆盖参与者原始Profile。
 - 管理员Recap页按participant A／B左右对照展示双方独立recap；参与者仍只查看自己的单栏报告。旧Markdown记录会自动压缩为固定标题的报告视图。
 - 管理员可在历史详情中永久删除已结束的记录；系统会二次确认，并禁止删除仍在运行或生成recap的记录。
 - 管理员可从历史页一键下载全部研究记录ZIP，包含参与者资料与同意记录、Profile结构、会话、transcript、recap、标记和流程数据；模型配置随包导出，但API Key始终为空。
@@ -42,7 +43,7 @@ npm start
 ```bash
 npm ci
 npm run build
-HOST=0.0.0.0 PORT=8787 DATA_DIR=/srv/proxylab-data npm start
+HOST=0.0.0.0 PORT=8787 DATA_DIR=/srv/proxylab-data PROFILE_REVISION_PASSWORD=replace-me npm start
 ```
 
 Windows PowerShell示例：
@@ -51,6 +52,7 @@ Windows PowerShell示例：
 $env:HOST = "0.0.0.0"
 $env:PORT = "8787"
 $env:DATA_DIR = "D:\proxylab-data"
+$env:PROFILE_REVISION_PASSWORD = "replace-me"
 npm.cmd start
 ```
 
@@ -75,9 +77,10 @@ Zeabur部署后，管理员与参与者使用同一登录页；输入`admin_arkl
 npm run check
 npm run test:smoke
 npm run test:browser
+npm run test:review-flow
 ```
 
-API smoke test会启动隔离的数据目录与本地模拟模型，验证首次登录知情同意、`admin_arklab`直接登录、固定recap schema、A/B结构一致性、登录权限、配置保存、双代理交互、标记、section决定、ZIP导出和历史记录。浏览器smoke test会自行启动隔离服务，验证草稿跨页恢复、页尾保存、管理员导出入口、实际同意书与统一登录页面；需要本机安装Chrome。
+API smoke test会启动隔离的数据目录与本地模拟模型，验证首次登录知情同意、`admin_arklab`直接登录、固定recap schema、A/B结构一致性、登录权限、配置保存、双代理交互、三类标记、标记取消、三段讨论准备、会话级再配置diff、ZIP导出和历史记录。浏览器smoke test验证一般页面；review-flow browser test验证标记分组、取消、讨论准备、密码门控和原配置／修改副本对照；两者均需要本机安装Chrome。
 
 ## 数据与安全边界
 

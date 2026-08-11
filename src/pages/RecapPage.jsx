@@ -5,14 +5,6 @@ import TextAnnotation from "../components/TextAnnotation.jsx";
 import { Icon } from "../components/Icons.jsx";
 import { legacyRecapToStructured } from "../utils/recapMarkdown.jsx";
 
-const DECISIONS = [
-  { value: "approved", label: "批准", className: "button-success" },
-  { value: "revision_requested", label: "要求修改", className: "button-warning" },
-  { value: "rejected", label: "拒绝", className: "button-danger" },
-  { value: "repair_required", label: "需要修复", className: "button-secondary" },
-];
-
-const DECISION_LABELS = Object.fromEntries([...DECISIONS.map((item) => [item.value, item.label]), ["partial", "部分已判断"]]);
 const OUTCOME_LABELS = { ready_for_review: "待审核", partial: "部分结果", no_agreement: "未达成方案" };
 const ITEM_STATUS_LABELS = {
   agreed: "已对齐",
@@ -26,46 +18,6 @@ const ITEM_STATUS_LABELS = {
 
 function formatDate(value) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
-}
-
-function SectionDecision({ sessionId, section, recap, onSaved, notify }) {
-  const saved = recap.sectionDecisions?.[section.id];
-  const sectionTitle = section.title || section.heading;
-  const [note, setNote] = useState(saved?.note || "");
-  const [saving, setSaving] = useState("");
-
-  async function decide(decision) {
-    setSaving(decision);
-    try {
-      const result = await api(`/api/sessions/${sessionId}/section-decisions`, {
-        method: "POST",
-        body: jsonBody({ sectionId: section.id, heading: sectionTitle, decision, note }),
-      });
-      onSaved(result.recap);
-      notify(`“${sectionTitle}”的决定已保存`);
-    } catch (error) {
-      notify(error.message, "error");
-    } finally {
-      setSaving("");
-    }
-  }
-
-  return (
-    <div className="section-decision">
-      <div className="section-decision-head">
-        <strong>对此部分作出判断</strong>
-        {saved ? <span className={`decision-pill decision-${saved.value}`}>{DECISION_LABELS[saved.value]}</span> : <span>尚未判断</span>}
-      </div>
-      <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="说明需要修改、拒绝或修复的内容（可选）" />
-      <div className="section-decision-buttons">
-        {DECISIONS.map((item) => (
-          <button type="button" key={item.value} className={`button button-small ${item.className}`} disabled={Boolean(saving)} onClick={() => decide(item.value)}>
-            {saving === item.value ? "保存中…" : item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function ReportSectionBody({ section }) {
@@ -86,7 +38,7 @@ function ReportSectionBody({ section }) {
   );
 }
 
-function RecapRenderer({ session, participantId, recap, user, annotations, onAnnotationSaved, onRecapUpdated, onOpenTranscript, notify }) {
+function RecapRenderer({ session, participantId, recap, annotations, onAnnotationSaved, onAnnotationCancelled, onOpenTranscript, notify }) {
   const report = useMemo(() => recap.structured || legacyRecapToStructured(recap.content, session.task), [recap.content, recap.structured, session.task]);
   return (
     <div className="structured-recap">
@@ -113,19 +65,15 @@ function RecapRenderer({ session, participantId, recap, user, annotations, onAnn
               targetType="recap"
               targetId={participantId}
               sectionId={section.id}
-              allowedTags={["important", "unexpected", "uncomfortable", "details_requested"]}
+              allowedTags={["important", "unexpected", "uncomfortable", "details_requested", "trust_decreased", "trust_increased", "agent_overreach"]}
               annotations={sectionAnnotations}
               onSaved={onAnnotationSaved}
+              onCancelled={onAnnotationCancelled}
               onOpenDetails={onOpenTranscript}
               notify={notify}
             >
               <ReportSectionBody section={section} />
             </TextAnnotation>
-            {user.role === "participant" ? (
-              <SectionDecision sessionId={session.id} section={section} recap={recap} onSaved={onRecapUpdated} notify={notify} />
-            ) : recap.sectionDecisions?.[section.id] ? (
-              <div className="admin-section-decision"><strong>{DECISION_LABELS[recap.sectionDecisions[section.id].value]}</strong>{recap.sectionDecisions[section.id].note || "无补充说明"}</div>
-            ) : null}
           </article>
         );
       })}
@@ -154,11 +102,19 @@ function FollowUpFlow({ session, user, onNavigate, onWorkflowSaved, notify }) {
   const revisions = session.configurationRevisions?.[user.id] || [];
   const latestRevision = revisions.at(-1);
   const savedPreparation = session.workflow?.[user.id]?.discussion_preparation;
-  const [note, setNote] = useState(savedPreparation?.note || "");
+  const [preparation, setPreparation] = useState(() => ({
+    counterpartExpectations: savedPreparation?.fields?.counterpartExpectations || "",
+    counterpartImpression: savedPreparation?.fields?.counterpartImpression || "",
+    followUpNotes: savedPreparation?.fields?.followUpNotes || savedPreparation?.note || "",
+  }));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setNote(savedPreparation?.note || "");
+    setPreparation({
+      counterpartExpectations: savedPreparation?.fields?.counterpartExpectations || "",
+      counterpartImpression: savedPreparation?.fields?.counterpartImpression || "",
+      followUpNotes: savedPreparation?.fields?.followUpNotes || savedPreparation?.note || "",
+    });
   }, [session.id, savedPreparation?.updatedAt]);
 
   async function savePreparation() {
@@ -166,7 +122,7 @@ function FollowUpFlow({ session, user, onNavigate, onWorkflowSaved, notify }) {
     try {
       const result = await api(`/api/sessions/${session.id}/workflow`, {
         method: "POST",
-        body: jsonBody({ stage: "discussion_preparation", outcome: "completed", note }),
+        body: jsonBody({ stage: "discussion_preparation", outcome: "completed", fields: preparation }),
       });
       onWorkflowSaved(result.workflow);
       notify("真人讨论准备已保存");
@@ -189,11 +145,20 @@ function FollowUpFlow({ session, user, onNavigate, onWorkflowSaved, notify }) {
           <div className="discussion-preparation">
             <strong>为真人讨论做准备</strong>
             <p>接下来，你将与另一位参与者进行真人讨论；此前，你们的代理已经彼此沟通过。请先独立记录你希望在讨论中确认或处理的事项，不必现在与对方讨论。</p>
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="例如：仍未解决的问题；想向对方确认或澄清的内容；希望修改或撤回由代理作出的承诺；以及接下来准备做什么。"
-            />
+            <div className="discussion-preparation-fields">
+              <label>
+                <span>你觉得对方对于这件事的预期是什么？他期待你做什么？</span>
+                <textarea value={preparation.counterpartExpectations} onChange={(event) => setPreparation((current) => ({ ...current, counterpartExpectations: event.target.value }))} placeholder="例如：对方可能期待我确认时间，并对代理提出的候选方案作出回应。" />
+              </label>
+              <label>
+                <span>仅根据这次代理互动，你对对方在本任务中形成了什么第一印象？</span>
+                <textarea value={preparation.counterpartImpression} onChange={(event) => setPreparation((current) => ({ ...current, counterpartImpression: event.target.value }))} placeholder="只描述与本任务有关的印象，以及哪些代理行为或信息促成了这一印象。" />
+              </label>
+              <label>
+                <span>后续联系笔记</span>
+                <textarea value={preparation.followUpNotes} onChange={(event) => setPreparation((current) => ({ ...current, followUpNotes: event.target.value }))} placeholder="记录未解决问题和准备做或询问的事情，例如：直接接受；澄清代理权限；重新协商；撤回承诺；向对方解释或道歉。" />
+              </label>
+            </div>
             <div className="discussion-preparation-actions">
               <button type="button" className="button button-primary" onClick={savePreparation} disabled={saving}>{saving ? "保存中…" : "保存讨论准备"}</button>
               {savedPreparation ? <small>上次保存：{formatDate(savedPreparation.updatedAt)}</small> : null}
@@ -251,8 +216,12 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
     if (annotation.tags.includes("details_requested")) setShowTranscript(true);
   }
 
-  function updateRecap(participantId, recap) {
-    setSelected((current) => ({ ...current, recaps: { ...current.recaps, [participantId]: recap } }));
+  function cancelAnnotations(cancelledAnnotations) {
+    const cancelledById = new Map(cancelledAnnotations.map((annotation) => [annotation.id, annotation]));
+    setSelected((current) => ({
+      ...current,
+      annotations: (current.annotations || []).map((annotation) => cancelledById.get(annotation.id) || annotation),
+    }));
   }
 
   function openTranscript() {
@@ -292,21 +261,19 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
                       session={selected}
                       participantId={participantId}
                       recap={recap}
-                      user={user}
                       annotations={selected.annotations || []}
                       onAnnotationSaved={addAnnotation}
-                      onRecapUpdated={(updated) => updateRecap(participantId, updated)}
+                      onAnnotationCancelled={cancelAnnotations}
                       onOpenTranscript={openTranscript}
                       notify={notify}
                     />
                   ) : <div className="form-error">{recap.error || "Recap正在生成"}</div>}
-                  {recap.decision ? <div className="decision-record"><strong>当前汇总：</strong>{DECISION_LABELS[recap.decision.value] || recap.decision.value}</div> : null}
                 </div>
               )) : <div className="empty-state compact">Recap尚未生成。当前状态：{selected.status}</div>}
             </section>
             <button className="transcript-toggle" onClick={() => setShowTranscript((value) => !value)}>{showTranscript ? "收起完整对话" : "查看完整对话记录"}<Icon name="chevron" size={16} /></button>
             {showTranscript ? (
-              <section className="recap-transcript" id="recap-transcript"><div className="panel-heading"><div><h2>完整对话记录</h2><p>选中任意文字后，可添加评论并标记为重要、意外或不适。</p></div></div><SessionTranscript session={selected} user={user} notify={notify} onMessageUpdated={updateMessage} annotations={selected.annotations || []} onAnnotationSaved={addAnnotation} /></section>
+              <section className="recap-transcript" id="recap-transcript"><div className="panel-heading"><div><h2>完整对话记录</h2><p>选中文字后，可以记录内容反应、信任变化或代理越权，并简述原因。</p></div></div><SessionTranscript session={selected} user={user} notify={notify} onMessageUpdated={updateMessage} annotations={selected.annotations || []} onAnnotationSaved={addAnnotation} onAnnotationCancelled={cancelAnnotations} /></section>
             ) : null}
             {user.role === "participant" && selected.recaps?.[user.id]?.status === "ready" ? (
               <FollowUpFlow

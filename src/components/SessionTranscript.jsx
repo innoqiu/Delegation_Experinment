@@ -43,7 +43,7 @@ function CommentEditor({ sessionId, message, user, onSaved, notify }) {
   );
 }
 
-export default function SessionTranscript({ session, user, notify, onMessageUpdated, annotations = [], onAnnotationSaved, allowComments = true }) {
+export default function SessionTranscript({ session, user, notify, onMessageUpdated, annotations = [], onAnnotationSaved, onAnnotationCancelled, allowComments = true }) {
   if (!session?.transcript?.length) return <div className="empty-state compact">对话尚未产生消息。</div>;
   return (
     <div className="transcript" aria-live="polite">
@@ -59,8 +59,10 @@ export default function SessionTranscript({ session, user, notify, onMessageUpda
                   sessionId={session.id}
                   targetType="message"
                   targetId={message.messageId}
+                  allowedTags={["important", "unexpected", "uncomfortable", "trust_decreased", "trust_increased", "agent_overreach"]}
                   annotations={annotations.filter((annotation) => annotation.targetType === "message" && annotation.targetId === message.messageId)}
                   onSaved={onAnnotationSaved}
+                  onCancelled={onAnnotationCancelled}
                   notify={notify}
                 >
                   <div className="message-text">{message.text}</div>

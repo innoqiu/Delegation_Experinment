@@ -107,6 +107,7 @@ const mock = createServer(async (req, res) => {
 const mockPort = await listen(mock);
 process.env.DATA_DIR = dataDir;
 process.env.ADMIN_ACCESS_CODE = "test-admin-code";
+process.env.PROFILE_REVISION_PASSWORD = "test-revision";
 const { createAppServer } = await import(`../server.mjs?smoke=${Date.now()}`);
 const appServer = createAppServer();
 const appPort = await listen(appServer);
@@ -309,11 +310,11 @@ try {
       quote: "周六14:30–17:30",
       start: 2,
       end: 16,
-      tags: ["important", "details_requested"],
+      tags: ["important", "details_requested", "trust_decreased"],
       note: "需要核对代理如何形成这一结论",
     },
   });
-  assert.deepEqual(recapAnnotation.annotation.tags, ["important", "details_requested"]);
+  assert.deepEqual(recapAnnotation.annotation.tags, ["important", "details_requested", "trust_decreased"]);
 
   const messageAnnotation = await request(`/api/sessions/${sessionId}/annotations`, {
     token: p1a.token,
@@ -325,11 +326,18 @@ try {
       quote: "候选方案",
       start: 2,
       end: 6,
-      tags: ["unexpected"],
+      tags: ["unexpected", "agent_overreach"],
       note: "代理过早收敛",
     },
   });
-  assert.deepEqual(messageAnnotation.annotation.tags, ["unexpected"]);
+  assert.deepEqual(messageAnnotation.annotation.tags, ["unexpected", "agent_overreach"]);
+  const cancelledAnnotations = await request(`/api/sessions/${sessionId}/annotations/cancel`, {
+    token: p1a.token,
+    method: "POST",
+    body: { targetType: "message", targetId: "P1A_T1_1", sectionId: "" },
+  });
+  assert.equal(cancelledAnnotations.annotations.length, 1);
+  assert.equal(Boolean(cancelledAnnotations.annotations[0].cancelledAt), true);
   await request(`/api/sessions/${sessionId}/annotations`, {
     token: p1a.token,
     method: "POST",
@@ -345,26 +353,50 @@ try {
   assert.equal(sectionDecision.recap.sectionDecisions.candidate.value, "repair_required");
   assert.equal(sectionDecision.recap.decision.value, "repair_required");
 
-  const changedProfile = await request("/api/profiles/P1A", { token: p1a.token });
-  changedProfile.participant.profiles.task1.interests = "安静展览与无障碍室内活动";
-  changedProfile.participant.profiles.task1.studyIntent.desiredUnderstanding = "希望被理解为谨慎、重视可达性且愿意协商的人";
-  await request("/api/profiles/P1A", { token: p1a.token, method: "PUT", body: { profiles: changedProfile.participant.profiles } });
+  await request(`/api/sessions/${sessionId}/reconfiguration-access`, {
+    token: p1a.token,
+    method: "POST",
+    expected: 403,
+    body: { password: "wrong" },
+  });
+  const revisionAccess = await request(`/api/sessions/${sessionId}/reconfiguration-access`, {
+    token: p1a.token,
+    method: "POST",
+    body: { password: "test-revision" },
+  });
+  assert.equal(revisionAccess.unlocked, true);
+  const revisedProfile = structuredClone(participantView.session.profileSnapshot.P1A);
+  revisedProfile.interests = "安静展览与无障碍室内活动";
+  revisedProfile.studyIntent.desiredUnderstanding = "希望被理解为谨慎、重视可达性且愿意协商的人";
   const revision = await request(`/api/sessions/${sessionId}/config-revisions`, {
     token: p1a.token,
     method: "POST",
     expected: 201,
-    body: {},
+    body: { password: "test-revision", revisedProfile },
   });
   assert.equal(revision.revision.noChanges, false);
   assert.equal(revision.revision.diff.some(({ path }) => path === "interests"), true);
   assert.equal(revision.revision.diff.some(({ path }) => path === "studyIntent.desiredUnderstanding"), true);
+  assert.equal(revision.revision.originalProfile.interests, "展览与散步");
+  assert.equal(revision.revision.revisedProfile.interests, "安静展览与无障碍室内活动");
+  const unchangedActiveProfile = await request("/api/profiles/P1A", { token: p1a.token });
+  assert.equal(unchangedActiveProfile.participant.profiles.task1.interests, "展览与散步");
 
   const discussionPreparation = await request(`/api/sessions/${sessionId}/workflow`, {
     token: p1a.token,
     method: "POST",
-    body: { stage: "discussion_preparation", outcome: "completed", note: "需要确认候选方案，并澄清代理是否有权接受" },
+    body: {
+      stage: "discussion_preparation",
+      outcome: "completed",
+      fields: {
+        counterpartExpectations: "对方期待我确认候选时间",
+        counterpartImpression: "对方在本任务中较重视效率",
+        followUpNotes: "需要确认候选方案，并澄清代理是否有权接受",
+      },
+    },
   });
   assert.equal(discussionPreparation.workflow.discussion_preparation.note, "需要确认候选方案，并澄清代理是否有权接受");
+  assert.equal(discussionPreparation.workflow.discussion_preparation.fields.counterpartExpectations, "对方期待我确认候选时间");
   const reentry = await request(`/api/sessions/${sessionId}/workflow`, {
     token: p1a.token,
     method: "POST",
