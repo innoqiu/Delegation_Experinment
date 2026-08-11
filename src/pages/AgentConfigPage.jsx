@@ -165,7 +165,7 @@ function RevisionResult({ revision }) {
   );
 }
 
-export default function AgentConfigPage({ user, notify, onNavigate, pageContext }) {
+export default function AgentConfigPage({ user, notify }) {
   const [participants, setParticipants] = useState([]);
   const [selectedId, setSelectedId] = useState(user.role === "participant" ? user.id : "");
   const [schemas, setSchemas] = useState(null);
@@ -179,8 +179,8 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
   const [revisionUnlocked, setRevisionUnlocked] = useState(false);
   const [revisionEnabled, setRevisionEnabled] = useState({});
   const [unlocking, setUnlocking] = useState(false);
+  const [revisionSessionId, setRevisionSessionId] = useState(null);
   const readOnly = user.role === "admin";
-  const revisionSessionId = user.role === "participant" ? pageContext?.revisionSessionId : null;
 
   useEffect(() => {
     api("/api/profile-schemas")
@@ -238,13 +238,24 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
   }, [notify, revisionSessionId, user.id]);
 
   async function unlockRevision() {
-    if (!revisionSessionId || !revisionPassword) return;
+    if (!revisionPassword || user.role !== "participant") return;
     setUnlocking(true);
     try {
-      await api(`/api/sessions/${revisionSessionId}/reconfiguration-access`, {
+      let targetSessionId = revisionSessionId;
+      if (!targetSessionId) {
+        const { sessions } = await api("/api/sessions");
+        const target = sessions.find((session) => (
+          session.status === "completed"
+          && session.recaps?.[user.id]?.status === "ready"
+        ));
+        if (!target) throw new Error("暂无可回看的已完成任务");
+        targetSessionId = target.id;
+      }
+      await api(`/api/sessions/${targetSessionId}/reconfiguration-access`, {
         method: "POST",
         body: jsonBody({ password: revisionPassword }),
       });
+      setRevisionSessionId(targetSessionId);
       setRevisionUnlocked(true);
       notify("再配置已解锁；使用卡片右侧开关开始对照修改");
     } catch (error) {
@@ -315,7 +326,7 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
   }
 
   const title = useMemo(() => readOnly ? `查看受试者 ${selectedId || "—"} 的配置` : `${selectedId} 的 Agent 配置`, [readOnly, selectedId]);
-  const visibleTasks = revisionSession ? [revisionSession.task] : TASK_KEYS;
+  const visibleTasks = revisionSession ? [revisionSession.task] : revisionSessionId ? [] : TASK_KEYS;
   const effectiveSchemas = revisionSession
     ? { ...(schemas || {}), [revisionSession.task]: revisionSession.profileSchemaSnapshot || schemas?.[revisionSession.task] }
     : schemas;
@@ -328,21 +339,28 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
         <div><h1>{title}</h1><p>{readOnly ? "管理员以只读方式检查参与者已保存的配置。固定问卷请在 Profile 结构页面管理。" : "这些资料将作为代理在三个任务中的授权上下文；代理形成的结果仍需你本人审核。"}</p></div>
         <div className="page-actions">
           {readOnly && <select className="select participant-select" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{participants.map((participant) => <option key={participant.id}>{participant.id}</option>)}</select>}
-          {revisionSession ? <button className="button button-ghost" onClick={() => onNavigate("recaps", { selectedSessionId: revisionSession.id })}>返回Recap</button> : null}
+          {!readOnly ? (
+            <form className="revision-quick-unlock" onSubmit={(event) => { event.preventDefault(); unlockRevision(); }}>
+              <button type="submit" className={`button ${revisionUnlocked ? "button-success" : "button-secondary"}`} disabled={revisionUnlocked || unlocking || !revisionPassword}>
+                {revisionUnlocked ? "已解锁" : unlocking ? "验证中…" : "解锁回看"}
+              </button>
+              <TextInput
+                type="text"
+                value={revisionPassword}
+                onChange={(event) => setRevisionPassword(event.target.value)}
+                placeholder="输入 reentry"
+                aria-label="再配置密码"
+                disabled={revisionUnlocked}
+              />
+              <small>{revisionSession ? revisionSession.recordName : "真人讨论后由实验员开放"}</small>
+            </form>
+          ) : null}
         </div>
       </div>
 
-      {revisionSession ? (
-        <div className="revision-access-panel">
-          <div className="revision-mode-banner"><strong>配置回看模式</strong><span>你正在回看 {revisionSession.recordName} 使用的原始配置。修改会保存为独立副本，不会覆盖原始 Profile。</span></div>
-          <div className="revision-password-row">
-            <label><span>再配置密码</span><TextInput type="password" value={revisionPassword} onChange={(event) => setRevisionPassword(event.target.value)} placeholder="请输入实验员提供的密码" disabled={revisionUnlocked} /></label>
-            <button type="button" className={`button ${revisionUnlocked ? "button-success" : "button-primary"}`} onClick={unlockRevision} disabled={revisionUnlocked || unlocking || !revisionPassword}>{revisionUnlocked ? "已解锁" : unlocking ? "验证中…" : "解锁再配置"}</button>
-          </div>
-        </div>
-      ) : null}
       <RevisionResult revision={lastRevision} />
 
+      {revisionSessionId && !revisionSession ? <div className="screen-center"><div className="loader" />正在准备配置对照…</div> : null}
       {!selectedId ? <div className="empty-state">还没有参与者登录。</div> : (
         <div className="profile-form">
           {visibleTasks.map((task) => (
@@ -409,7 +427,7 @@ export default function AgentConfigPage({ user, notify, onNavigate, pageContext 
           ))}
         </div>
       )}
-      {!readOnly && selectedId && (!revisionSession || revisionUnlocked) ? (
+      {!readOnly && selectedId && (!revisionSessionId || (revisionSession && revisionUnlocked)) ? (
         <div className="profile-save-footer">
           <div className="profile-draft-status" aria-live="polite">
             <Icon name={draftDirty ? "clock" : "check"} size={17} />

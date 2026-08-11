@@ -82,25 +82,7 @@ function RecapRenderer({ session, participantId, recap, annotations, onAnnotatio
   );
 }
 
-function RevisionSummary({ revision }) {
-  if (!revision) return <p>尚未返回配置阶段记录修改。</p>;
-  if (revision.noChanges) return <p>已完成配置回看，本次未修改任何字段。</p>;
-  return (
-    <div className="revision-diff-list">
-      {revision.diff.map((item) => (
-        <div className="revision-diff-row" key={item.path}>
-          <strong>{item.label}</strong>
-          <div><span>原配置</span><p>{typeof item.before === "object" ? JSON.stringify(item.before) : String(item.before || "（空）")}</p></div>
-          <div><span>修改后</span><p>{typeof item.after === "object" ? JSON.stringify(item.after) : String(item.after || "（空）")}</p></div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FollowUpFlow({ session, user, onNavigate, onWorkflowSaved, notify }) {
-  const revisions = session.configurationRevisions?.[user.id] || [];
-  const latestRevision = revisions.at(-1);
+function FollowUpFlow({ session, user, onWorkflowSaved, notify }) {
   const savedPreparation = session.workflow?.[user.id]?.discussion_preparation;
   const [preparation, setPreparation] = useState(() => ({
     counterpartExpectations: savedPreparation?.fields?.counterpartExpectations || "",
@@ -135,15 +117,11 @@ function FollowUpFlow({ session, user, onNavigate, onWorkflowSaved, notify }) {
 
   return (
     <section className="follow-up-flow">
-      <div className="panel-heading"><div><h2>后续研究流程</h2><p>完成配置回看和讨论准备后，你将与另一位参与者进行真人讨论，再进入访谈。</p></div></div>
+      <div className="panel-heading"><div><h2>后续研究流程</h2><p>完成讨论准备后，你将与另一位参与者进行真人讨论，再进入访谈。</p></div></div>
       <div className="follow-up-grid follow-up-grid-single">
         <div className="follow-up-card">
-          <h3>配置回看与真人讨论准备</h3>
-          <p>请先回看本任务的配置。你可以保留原配置，也可以根据代理互动的结果进行修改。</p>
-          <RevisionSummary revision={latestRevision} />
-          <button type="button" className="button button-secondary follow-up-config-button" onClick={() => onNavigate("profiles", { revisionSessionId: session.id, task: session.task })}>回看／修改本任务配置</button>
+          <h3>为真人讨论做准备</h3>
           <div className="discussion-preparation">
-            <strong>为真人讨论做准备</strong>
             <p>接下来，你将与另一位参与者进行真人讨论；此前，你们的代理已经彼此沟通过。请先独立记录你希望在讨论中确认或处理的事项，不必现在与对方讨论。</p>
             <div className="discussion-preparation-fields">
               <label>
@@ -279,7 +257,6 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
               <FollowUpFlow
                 session={selected}
                 user={user}
-                onNavigate={onNavigate}
                 notify={notify}
                 onWorkflowSaved={(workflow) => setSelected((current) => ({ ...current, workflow: { ...(current.workflow || {}), [user.id]: workflow } }))}
               />

@@ -151,7 +151,7 @@ try {
       HOST: "127.0.0.1",
       PORT: String(appPort),
       DATA_DIR: dataDir,
-      PROFILE_REVISION_PASSWORD: "test-revision",
+      PROFILE_REVISION_PASSWORD: "reentry",
     },
     stdio: "ignore",
   });
@@ -236,22 +236,28 @@ try {
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('标记原因：') && document.body.innerText.includes('信任下降了')"), "Annotation was not rendered");
   assert.equal(await evaluate(client.call, "document.querySelectorAll('.section-decision').length"), 0);
   assert.equal(await evaluate(client.call, "document.body.innerText.includes('你觉得对方对于这件事的预期是什么？') && document.body.innerText.includes('后续联系笔记')"), true);
+  assert.equal(await evaluate(client.call, "document.body.innerText.includes('回看／修改本任务配置')"), false);
   const reviewScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(screenshotPath, Buffer.from(reviewScreenshot.data, "base64"));
 
   await evaluate(client.call, `(() => { window.confirm = () => true; document.querySelector('.annotation-cancel-button').click(); return true; })()`);
   await waitFor(() => evaluate(client.call, "document.querySelectorAll('.annotation-record').length === 0"), "Cancelled annotation remained visible");
-  await evaluate(client.call, `([...document.querySelectorAll('button')].find((node) => node.innerText.includes('回看／修改本任务配置'))).click(); true`);
-  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('再配置密码')"), "Revision password gate did not render");
+  await evaluate(client.call, `([...document.querySelectorAll('.nav-item')].find((node) => node.innerText.trim() === 'Agent配置')).click(); true`);
+  await waitFor(() => evaluate(client.call, "Boolean(document.querySelector('.revision-quick-unlock input'))"), "Profile-page revision gate did not render");
+  assert.equal(await evaluate(client.call, `(() => {
+    const button = document.querySelector('.revision-quick-unlock button').getBoundingClientRect();
+    const input = document.querySelector('.revision-quick-unlock input').getBoundingClientRect();
+    return button.left < input.left;
+  })()`), true);
   await evaluate(client.call, `(() => {
-    const input = document.querySelector('.revision-password-row input');
+    const input = document.querySelector('.revision-quick-unlock input');
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    setter.call(input, 'test-revision');
+    setter.call(input, 'reentry');
     input.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   })()`);
-  await waitFor(() => evaluate(client.call, "!document.querySelector('.revision-password-row button').disabled"), "Revision unlock button remained disabled");
-  await evaluate(client.call, "document.querySelector('.revision-password-row button').click(); true");
+  await waitFor(() => evaluate(client.call, "!document.querySelector('.revision-quick-unlock button').disabled"), "Revision unlock button remained disabled");
+  await evaluate(client.call, "document.querySelector('.revision-quick-unlock button').click(); true");
   await waitFor(() => evaluate(client.call, "Boolean(document.querySelector('.revision-slide-toggle input'))"), "Revision toggle did not unlock");
   await evaluate(client.call, "document.querySelector('.revision-slide-toggle input').click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('原配置') && document.body.innerText.includes('修改副本')"), "Side-by-side revision view did not render");
