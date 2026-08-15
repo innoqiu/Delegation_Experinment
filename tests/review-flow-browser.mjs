@@ -12,6 +12,7 @@ const dataDir = mkdtempSync(join(tmpdir(), "proxylab-review-ui-"));
 const chromeProfile = mkdtempSync(join(tmpdir(), "proxylab-review-chrome-"));
 const screenshotPath = join(projectDir, "..", "proxylab-review-flow-qa.png");
 const revisionScreenshotPath = join(projectDir, "..", "proxylab-revision-qa.png");
+const adminRevisionScreenshotPath = join(projectDir, "..", "proxylab-admin-revision-qa.png");
 const completionPhrase = "我认为任务已完成申请结束";
 let appProcess;
 let chromeProcess;
@@ -275,17 +276,37 @@ try {
   const participantSession = await api(`/api/sessions/${created.session.id}`, { token: participant.token });
   const savedRevision = participantSession.session.configurationRevisions.P0A.at(-1);
   assert.equal(savedRevision.originalProfile.studyIntent.authorizationIntent === savedRevision.revisedProfile.studyIntent.authorizationIntent, false);
+  const revisionScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(revisionScreenshotPath, Buffer.from(revisionScreenshot.data, "base64"));
+
+  await evaluate(client.call, "localStorage.clear(); location.href = '/'; true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('进入实验系统')"), "Login page did not return");
+  await evaluate(client.call, `(() => {
+    const input = document.querySelector('.login-panel input');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'admin_arklab');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.login-panel button').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('模型配置')"), "Admin shell did not load");
+  await evaluate(client.call, `([...document.querySelectorAll('.nav-item')].find((node) => node.innerText.trim() === 'Agent配置')).click(); true`);
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('Profile 前后修改记录') && document.body.innerText.includes('P0A - P0B - Task1')"), "Admin revision history did not render");
+  await waitFor(() => evaluate(client.call, `([...document.querySelectorAll('.admin-profile-revisions .profile-version-revised textarea')]
+    .some((node) => node.value.includes('测试修改：代理只能形成候选方案')))`) , "Revised profile value did not render in admin history");
+  await evaluate(client.call, "document.querySelector('.admin-profile-revisions').scrollIntoView({ block: 'start' }); true");
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+  const adminRevisionScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(adminRevisionScreenshotPath, Buffer.from(adminRevisionScreenshot.data, "base64"));
   const relevantErrors = client.events.filter((event) => (
     event.method === "Runtime.exceptionThrown"
     || (event.method === "Runtime.consoleAPICalled" && event.params?.type === "error")
     || (event.method === "Log.entryAdded" && event.params?.entry?.level === "error")
   ));
   assert.deepEqual(relevantErrors, [], "Browser emitted runtime or console errors");
-  const revisionScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
-  writeFileSync(revisionScreenshotPath, Buffer.from(revisionScreenshot.data, "base64"));
   client.socket.close();
 
-  console.log(`Review-flow browser test passed. Screenshots: ${screenshotPath}, ${revisionScreenshotPath}`);
+  console.log(`Review-flow browser test passed. Screenshots: ${screenshotPath}, ${revisionScreenshotPath}, ${adminRevisionScreenshotPath}`);
 } finally {
   chromeProcess?.kill();
   appProcess?.kill();

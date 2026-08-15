@@ -48,7 +48,7 @@ export async function downloadApi(path) {
   }
 
   const disposition = response.headers.get("content-disposition") || "";
-  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "proxylab-records.zip";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "proxylab-cleaned-data.zip";
   return { blob: await response.blob(), filename };
 }
 

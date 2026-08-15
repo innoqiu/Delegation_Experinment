@@ -704,44 +704,339 @@ function createZip(entries) {
   return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
-function exportFileStem(value, fallback) {
-  const stem = String(value || fallback).trim().replace(/[^A-Za-z0-9._ -]+/g, "_").replace(/\s+/g, "_");
-  return stem.slice(0, 120) || fallback;
+const CLEAN_EXPORT_TASK_LABELS = {
+  task1: "Profile 1：社交计划",
+  task2: "Profile 2：新关系介绍",
+  task3: "Profile 3：共享资源分配",
+};
+
+const CLEAN_EXPORT_TAG_LABELS = {
+  important: "重要",
+  unexpected: "意外",
+  uncomfortable: "不适",
+  details_requested: "需要查看详细记录",
+  trust_increased: "信任上升",
+  trust_decreased: "信任下降",
+  agent_overreach: "Agent越权",
+};
+
+const CLEAN_EXPORT_DECISION_LABELS = {
+  approved: "批准",
+  revision_requested: "要求修改",
+  rejected: "拒绝",
+  repair_required: "需要修复",
+};
+
+function cleanExportText(value) {
+  if (value === null || value === undefined || value === "") return "未填写";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (Array.isArray(value)) return value.length ? value.map(cleanExportText).join("、") : "未填写";
+  if (typeof value === "object") {
+    const entries = Object.entries(value);
+    return entries.length ? entries.map(([key, item]) => `${key}=${cleanExportText(item)}`).join("；") : "未填写";
+  }
+  return String(value).trim() || "未填写";
 }
 
-function buildRecordsArchive() {
-  const exportedAt = now();
-  const sessions = clone(store.sessions);
-  const participants = clone(store.participants);
-  const modelConfig = publicModelConfig();
-  const jsonEntry = (name, value) => ({ name, data: JSON.stringify(value, null, 2) });
-  const entries = [
-    jsonEntry("manifest.json", {
-      exportedAt,
-      participantCount: Object.keys(participants).length,
-      sessionCount: sessions.length,
-      apiKeysIncluded: false,
-      contents: ["participants.json", "profile-schemas.json", "model-config-without-api-keys.json", "sessions/index.json", "sessions/*.json"],
-    }),
-    jsonEntry("participants.json", participants),
-    jsonEntry("profile-schemas.json", clone(store.profileSchemas)),
-    jsonEntry("model-config-without-api-keys.json", modelConfig),
-    jsonEntry("sessions/index.json", sessions.map((session) => ({
-      id: session.id,
+function profileHasExportContent(profile = {}) {
+  return Object.entries(profile).some(([key, value]) => {
+    if (key === "customFields") return Array.isArray(value) && value.length > 0;
+    if (key === "studyIntent") return Object.values(value || {}).some((item) => String(item || "").trim());
+    return value !== null && value !== "" && !(Array.isArray(value) && value.length === 0)
+      && !(typeof value === "object" && !Array.isArray(value) && Object.keys(value || {}).length === 0);
+  });
+}
+
+function cleanExportAnnotation(annotation) {
+  return {
+    id: annotation.id,
+    author: annotation.author || "未知",
+    targetType: annotation.targetType,
+    targetId: annotation.targetId,
+    sectionId: annotation.sectionId || "",
+    quote: annotation.quote || "",
+    start: Number(annotation.start || 0),
+    end: Number(annotation.end || 0),
+    tags: Array.isArray(annotation.tags) ? [...annotation.tags] : [],
+    tagLabels: (annotation.tags || []).map((tag) => CLEAN_EXPORT_TAG_LABELS[tag] || tag),
+    reason: annotation.note || "",
+    createdAt: annotation.createdAt || null,
+  };
+}
+
+function cleanExportRecap(recap) {
+  if (!recap) return null;
+  const content = String(recap.content || (
+    recap.structured?.sections ? structuredRecapToMarkdown(recap.structured) : ""
+  )).trim();
+  return {
+    status: recap.status || "unknown",
+    content,
+    structured: recap.structured ? clone(recap.structured) : null,
+    error: recap.error || null,
+    decision: recap.decision ? clone(recap.decision) : null,
+    sectionDecisions: recap.sectionDecisions ? clone(recap.sectionDecisions) : {},
+    generatedAt: recap.generatedAt || null,
+  };
+}
+
+function buildCleanedDatasets() {
+  const usableSessions = store.sessions.filter((session) => (
+    ["completed", "completed_with_errors"].includes(session.status)
+    && Array.isArray(session.transcript)
+    && session.transcript.length > 0
+  ));
+  const usedParticipantIds = new Set(usableSessions.flatMap((session) => [session.participantA, session.participantB]));
+  const includedParticipantIds = Object.keys(store.participants).filter((participantId) => usedParticipantIds.has(participantId));
+  const allAnnotations = usableSessions.flatMap((session) => session.annotations || []);
+  const activeAnnotations = allAnnotations.filter((annotation) => !annotation.cancelledAt);
+  const cancelledAnnotations = allAnnotations.filter((annotation) => annotation.cancelledAt);
+
+  const profiles = includedParticipantIds.map((participantId) => {
+    const participant = store.participants[participantId] || {};
+    const revisions = usableSessions.flatMap((session, sessionIndex) => (
+      (session.configurationRevisions?.[participantId] || []).map((revision) => ({
+        revisionId: revision.id,
+        sessionNumber: `U${String(sessionIndex + 1).padStart(2, "0")}`,
+        sourceSessionId: session.id,
+        recordName: session.recordName,
+        task: revision.task || session.task,
+        taskLabel: CLEAN_EXPORT_TASK_LABELS[revision.task || session.task] || revision.task || session.task,
+        createdAt: revision.createdAt || null,
+        noChanges: Boolean(revision.noChanges),
+        originalProfile: clone(revision.originalProfile || session.profileSnapshot?.[participantId] || {}),
+        revisedProfile: clone(revision.revisedProfile || {}),
+        diff: clone(revision.diff || []),
+      }))
+    ));
+    return {
+      participantId,
+      isDummy: Boolean(participant.isDummy),
+      profiles: Object.fromEntries(["task1", "task2", "task3"].map((task) => [task, {
+        taskLabel: CLEAN_EXPORT_TASK_LABELS[task],
+        values: clone(participant.profiles?.[task] || {}),
+      }])),
+      revisions,
+    };
+  });
+
+  const recaps = usableSessions.map((session, index) => {
+    const annotations = (session.annotations || []).filter((annotation) => !annotation.cancelledAt);
+    return {
+      sessionNumber: `U${String(index + 1).padStart(2, "0")}`,
+      sourceSessionId: session.id,
       recordName: session.recordName,
       participantA: session.participantA,
       participantB: session.participantB,
       task: session.task,
+      taskLabel: CLEAN_EXPORT_TASK_LABELS[session.task] || session.task,
       status: session.status,
-      createdAt: session.createdAt,
-      completedAt: session.completedAt,
-    }))),
-  ];
-  sessions.forEach((session, index) => {
-    const ordinal = String(index + 1).padStart(3, "0");
-    entries.push(jsonEntry(`sessions/${ordinal}_${exportFileStem(session.recordName, session.id)}.json`, session));
+      participants: [session.participantA, session.participantB].map((participantId) => ({
+        participantId,
+        recap: cleanExportRecap(session.recaps?.[participantId]),
+        annotations: annotations
+          .filter((annotation) => annotation.targetType === "recap" && annotation.targetId === participantId)
+          .map(cleanExportAnnotation),
+      })),
+    };
   });
-  return createZip(entries);
+
+  const conversations = usableSessions.map((session, index) => {
+    const annotations = (session.annotations || []).filter((annotation) => !annotation.cancelledAt && annotation.targetType === "message");
+    const annotationsByMessage = new Map();
+    for (const annotation of annotations) {
+      if (!annotationsByMessage.has(annotation.targetId)) annotationsByMessage.set(annotation.targetId, []);
+      annotationsByMessage.get(annotation.targetId).push(cleanExportAnnotation(annotation));
+    }
+    return {
+      sessionNumber: `U${String(index + 1).padStart(2, "0")}`,
+      sourceSessionId: session.id,
+      recordName: session.recordName,
+      participantA: session.participantA,
+      participantB: session.participantB,
+      task: session.task,
+      taskLabel: CLEAN_EXPORT_TASK_LABELS[session.task] || session.task,
+      status: session.status,
+      messages: (session.transcript || []).map((message, messageIndex) => {
+        const messageId = message.messageId || message.id || "";
+        return {
+          index: messageIndex + 1,
+          messageId,
+          participantId: message.participantId || message.participant || message.sender || message.agent || message.role || "未知代理",
+          slot: message.slot || null,
+          round: message.round ?? null,
+          text: message.text || message.content || message.message || "",
+          createdAt: message.createdAt || null,
+          annotations: annotationsByMessage.get(messageId) || [],
+        };
+      }),
+    };
+  });
+
+  return {
+    manifest: {
+      exportedAt: now(),
+      source: "server DATA_DIR/store.json",
+      includedParticipantCount: profiles.length,
+      usableSessionCount: usableSessions.length,
+      activeAnnotationCount: activeAnnotations.length,
+      recapAnnotationCount: activeAnnotations.filter((annotation) => annotation.targetType === "recap").length,
+      messageAnnotationCount: activeAnnotations.filter((annotation) => annotation.targetType === "message").length,
+      excludedCancelledAnnotationCount: cancelledAnnotations.length,
+      profileRevisionCount: profiles.reduce((sum, participant) => sum + participant.revisions.length, 0),
+      excludedSessionCount: store.sessions.length - usableSessions.length,
+      apiKeysIncluded: false,
+      rawStoreIncluded: false,
+      contents: [
+        "cleaned_experiment_data.md",
+        "01_participant_profiles.json",
+        "02_participant_recaps_and_annotations.json",
+        "03_agent_conversations_and_annotations.json",
+      ],
+    },
+    profiles,
+    recaps,
+    conversations,
+  };
+}
+
+function appendProfileMarkdown(lines, profile) {
+  const values = profile.values || {};
+  if (!profileHasExportContent(values)) {
+    lines.push("未填写。", "");
+    return;
+  }
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "customFields") {
+      if (Array.isArray(value) && value.length) {
+        lines.push("- 自定义字段：");
+        for (const item of value) lines.push(`  - ${cleanExportText(item.label)}：${cleanExportText(item.value)}`);
+      }
+      continue;
+    }
+    if (key === "studyIntent") {
+      lines.push(`- studyIntent.authorizationIntent：${cleanExportText(value?.authorizationIntent)}`);
+      lines.push(`- studyIntent.desiredUnderstanding：${cleanExportText(value?.desiredUnderstanding)}`);
+      continue;
+    }
+    lines.push(`- ${key}：${cleanExportText(value)}`);
+  }
+  lines.push("");
+}
+
+function appendAnnotationMarkdown(lines, annotation, index) {
+  const tags = annotation.tagLabels.length ? annotation.tagLabels.join("、") : "未加标签";
+  lines.push(`- 标记 ${index}｜标记者：${annotation.author}｜标签：${tags}`);
+  lines.push(`  - 引文：${cleanExportText(annotation.quote)}`);
+  if (annotation.reason) lines.push(`  - 标记原因：${annotation.reason}`);
+}
+
+function buildCleanedMarkdown(datasets) {
+  const { manifest, profiles, recaps, conversations } = datasets;
+  const lines = [
+    "# 清洗后的 AI 代理沟通实验资料",
+    "",
+    "## 数据范围",
+    "",
+    "- 来源：服务器当前 `DATA_DIR/store.json`。",
+    `- 纳入：${manifest.includedParticipantCount} 个实际出现在有效会话中的参与者；${manifest.usableSessionCount} 次有交流内容的已完成会话。`,
+    `- 有效人工标记：${manifest.activeAnnotationCount} 条（Recap ${manifest.recapAnnotationCount} 条；消息 ${manifest.messageAnnotationCount} 条）。`,
+    `- 排除：${manifest.excludedSessionCount} 次失败、未完成或无交流内容的会话；${manifest.excludedCancelledAnnotationCount} 条已取消标记；未进入有效会话的账号。`,
+    "- 不包含：API Key、模型配置、系统提示词、登录／同意元数据、内部结束审核日志和原始 store.json。",
+    "- 保留原则：同一配对与任务的重复有效运行分别保留，并按原始会话顺序编号；不改写参与者或代理原话。",
+    "",
+    "---",
+    "",
+    "# 第一部分：每位参与者的三个 Profile",
+    "",
+  ];
+
+  for (const participant of profiles) {
+    lines.push(`## ${participant.participantId}${participant.isDummy ? "（试运行/虚拟参与者）" : ""}`, "");
+    for (const task of ["task1", "task2", "task3"]) {
+      const profile = participant.profiles[task];
+      lines.push(`### ${profile.taskLabel}`, "");
+      appendProfileMarkdown(lines, profile);
+    }
+    lines.push("### Profile 前后修改记录", "");
+    if (!participant.revisions.length) {
+      lines.push("无修改记录。", "");
+    } else {
+      for (const revision of participant.revisions) {
+        lines.push(
+          `#### ${revision.sessionNumber}｜${revision.recordName}｜${revision.taskLabel}`,
+          "",
+          `- 修改时间：${cleanExportText(revision.createdAt)}`,
+          `- 结果：${revision.noChanges ? "未修改任何字段" : `修改 ${revision.diff.length} 个字段`}`,
+        );
+        if (revision.diff.length) {
+          lines.push("- 字段差异：");
+          for (const item of revision.diff) {
+            lines.push(`  - ${item.label || item.path || "未命名字段"}（${item.path || "未知路径"}）`);
+            lines.push(`    - 原配置：${cleanExportText(item.before)}`);
+            lines.push(`    - 修改后：${cleanExportText(item.after)}`);
+          }
+        }
+        lines.push("");
+      }
+    }
+  }
+
+  lines.push("---", "", "# 第二部分：每位参与者的 Recap 与人工标记", "");
+  for (const session of recaps) {
+    lines.push(
+      `## 会话 ${session.sessionNumber}｜${session.participantA} ↔ ${session.participantB}｜${session.taskLabel}`,
+      "",
+      `- 原始记录名：${cleanExportText(session.recordName)}`,
+      `- 会话状态：${cleanExportText(session.status)}`,
+      "",
+    );
+    for (const participant of session.participants) {
+      lines.push(`### ${participant.participantId} 的 Recap`, "");
+      if (!participant.recap) {
+        lines.push("Recap 缺失。", "");
+      } else if (participant.recap.content) {
+        lines.push(...participant.recap.content.split(/\r?\n/), "");
+      } else {
+        lines.push(`Recap 不可用：${cleanExportText(participant.recap.error || participant.recap.status)}`, "");
+      }
+      if (participant.recap?.decision?.value) {
+        lines.push(`- 历史总体决定：${CLEAN_EXPORT_DECISION_LABELS[participant.recap.decision.value] || participant.recap.decision.value}`);
+        if (participant.recap.decision.note) lines.push(`- 说明：${participant.recap.decision.note}`);
+        lines.push("");
+      }
+      lines.push(`#### ${participant.participantId} 对 Recap 的逐条标记`, "");
+      if (!participant.annotations.length) lines.push("- 无有效逐条标记。");
+      participant.annotations.forEach((annotation, index) => appendAnnotationMarkdown(lines, annotation, index + 1));
+      lines.push("");
+    }
+  }
+
+  lines.push("---", "", "# 第三部分：每对 Agent 的交流记录与人工标记", "");
+  for (const session of conversations) {
+    lines.push(`## 会话 ${session.sessionNumber}｜${session.participantA} ↔ ${session.participantB}｜${session.taskLabel}`, "");
+    for (const message of session.messages) {
+      lines.push(`### ${message.index}. ${message.participantId}${message.messageId ? `（${message.messageId}）` : ""}`, "", message.text, "");
+      if (message.annotations.length) {
+        lines.push("对该消息的人工标记：");
+        message.annotations.forEach((annotation, index) => appendAnnotationMarkdown(lines, annotation, index + 1));
+        lines.push("");
+      }
+    }
+  }
+  return `${lines.join("\n").trim()}\n`;
+}
+
+function buildCleanedRecordsArchive() {
+  const datasets = buildCleanedDatasets();
+  const jsonEntry = (name, value) => ({ name, data: JSON.stringify(value, null, 2) });
+  return createZip([
+    jsonEntry("manifest.json", datasets.manifest),
+    { name: "cleaned_experiment_data.md", data: buildCleanedMarkdown(datasets) },
+    jsonEntry("01_participant_profiles.json", datasets.profiles),
+    jsonEntry("02_participant_recaps_and_annotations.json", datasets.recaps),
+    jsonEntry("03_agent_conversations_and_annotations.json", datasets.conversations),
+  ]);
 }
 
 async function readJson(req) {
@@ -1441,6 +1736,22 @@ async function handleApi(req, res, url) {
     return json(res, 200, { participants });
   }
 
+  if (req.method === "GET" && path === "/api/profile-revisions") {
+    requireAuth(req, "admin");
+    const participantId = normalizeParticipantId(url.searchParams.get("participantId"));
+    if (!store.participants[participantId]) throw httpError(404, "受试者尚未登录");
+    const revisions = store.sessions.flatMap((session) => (
+      (session.configurationRevisions?.[participantId] || []).map((revision) => ({
+        sessionId: session.id,
+        recordName: session.recordName,
+        task: revision.task || session.task,
+        profileSchemaSnapshot: clone(session.profileSchemaSnapshot || store.profileSchemas?.[revision.task || session.task] || {}),
+        revision: clone(revision),
+      }))
+    )).sort((a, b) => String(b.revision.createdAt || "").localeCompare(String(a.revision.createdAt || "")));
+    return json(res, 200, { participantId, revisions });
+  }
+
   if (path === "/api/profile-schemas" && req.method === "GET") {
     requireAuth(req);
     return json(res, 200, { profileSchemas: clone(store.profileSchemas) });
@@ -1513,11 +1824,11 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/export/all.zip" && req.method === "GET") {
     requireAuth(req, "admin");
-    const archive = buildRecordsArchive();
+    const archive = buildCleanedRecordsArchive();
     const date = now().slice(0, 10);
     res.writeHead(200, {
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="proxylab-records-${date}.zip"`,
+      "Content-Disposition": `attachment; filename="proxylab-cleaned-data-${date}.zip"`,
       "Content-Length": archive.length,
       "Cache-Control": "no-store",
     });

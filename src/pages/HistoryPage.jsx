@@ -50,7 +50,7 @@ export default function HistoryPage({ user, notify }) {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      notify("全部记录 ZIP 已下载");
+      notify("整理后数据 ZIP 已下载");
     } catch (error) {
       notify(error.message, "error");
     } finally {
@@ -86,7 +86,7 @@ export default function HistoryPage({ user, notify }) {
           <label className="search-box"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索记录名称或受试者" /></label>
           <select className="select" value={task} onChange={(event) => setTask(event.target.value)}><option value="all">全部任务</option><option value="task1">Task 1</option><option value="task2">Task 2</option><option value="task3">Task 3</option></select>
           <select className="select" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option></select>
-          <button className="button button-secondary history-export" onClick={downloadAll} disabled={exporting}><Icon name="download" size={16} />{exporting ? "正在打包…" : "下载全部记录"}</button>
+          <button className="button button-secondary history-export" onClick={downloadAll} disabled={exporting}><Icon name="download" size={16} />{exporting ? "正在整理…" : "下载整理后数据"}</button>
           <button className="icon-button" onClick={load}><Icon name="refresh" size={17} /></button>
         </div>
         <div className="table-wrap">

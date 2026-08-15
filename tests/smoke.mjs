@@ -338,6 +338,21 @@ try {
   });
   assert.equal(cancelledAnnotations.annotations.length, 1);
   assert.equal(Boolean(cancelledAnnotations.annotations[0].cancelledAt), true);
+  const activeMessageAnnotation = await request(`/api/sessions/${sessionId}/annotations`, {
+    token: p1a.token,
+    method: "POST",
+    expected: 201,
+    body: {
+      targetType: "message",
+      targetId: "P1B_T1_1",
+      quote: "候选时间",
+      start: 1,
+      end: 5,
+      tags: ["agent_overreach", "trust_decreased"],
+      note: "对方代理把候选说成了确定安排",
+    },
+  });
+  assert.deepEqual(activeMessageAnnotation.annotation.tags, ["agent_overreach", "trust_decreased"]);
   await request(`/api/sessions/${sessionId}/annotations`, {
     token: p1a.token,
     method: "POST",
@@ -381,6 +396,11 @@ try {
   assert.equal(revision.revision.revisedProfile.interests, "安静展览与无障碍室内活动");
   const unchangedActiveProfile = await request("/api/profiles/P1A", { token: p1a.token });
   assert.equal(unchangedActiveProfile.participant.profiles.task1.interests, "展览与散步");
+  await request("/api/profile-revisions?participantId=P1A", { token: p1a.token, expected: 403 });
+  const adminRevisionHistory = await request("/api/profile-revisions?participantId=P1A", { token: admin.token });
+  assert.equal(adminRevisionHistory.revisions.length, 1);
+  assert.equal(adminRevisionHistory.revisions[0].revision.originalProfile.interests, "展览与散步");
+  assert.equal(adminRevisionHistory.revisions[0].revision.revisedProfile.interests, "安静展览与无障碍室内活动");
 
   const discussionPreparation = await request(`/api/sessions/${sessionId}/workflow`, {
     token: p1a.token,
@@ -447,19 +467,48 @@ try {
   });
   assert.equal(exportResponse.status, 200);
   assert.equal(exportResponse.headers.get("content-type"), "application/zip");
-  assert.match(exportResponse.headers.get("content-disposition"), /proxylab-records-\d{4}-\d{2}-\d{2}\.zip/);
+  assert.match(exportResponse.headers.get("content-disposition"), /proxylab-cleaned-data-\d{4}-\d{2}-\d{2}\.zip/);
   const archive = Buffer.from(await exportResponse.arrayBuffer());
   assert.equal(archive.readUInt32LE(0), 0x04034b50);
   const archiveEntries = readStoredZipEntries(archive);
   assert.equal(archiveEntries.has("manifest.json"), true);
-  assert.equal(archiveEntries.has("participants.json"), true);
-  assert.equal(archiveEntries.has("profile-schemas.json"), true);
-  assert.equal(archiveEntries.has("model-config-without-api-keys.json"), true);
-  assert.equal([...archiveEntries.keys()].filter((name) => /^sessions\/\d+_.+\.json$/.test(name)).length, 3);
-  assert.equal(JSON.parse(archiveEntries.get("manifest.json")).apiKeysIncluded, false);
-  const exportedModels = JSON.parse(archiveEntries.get("model-config-without-api-keys.json"));
-  assert.equal(exportedModels.agent1.apiKey, "");
-  assert.equal(exportedModels.agent2.apiKey, "");
+  assert.equal(archiveEntries.has("cleaned_experiment_data.md"), true);
+  assert.equal(archiveEntries.has("01_participant_profiles.json"), true);
+  assert.equal(archiveEntries.has("02_participant_recaps_and_annotations.json"), true);
+  assert.equal(archiveEntries.has("03_agent_conversations_and_annotations.json"), true);
+  assert.equal(archiveEntries.size, 5);
+  const exportedManifest = JSON.parse(archiveEntries.get("manifest.json"));
+  assert.equal(exportedManifest.apiKeysIncluded, false);
+  assert.equal(exportedManifest.rawStoreIncluded, false);
+  assert.equal(exportedManifest.includedParticipantCount, 2);
+  assert.equal(exportedManifest.usableSessionCount, 3);
+  assert.equal(exportedManifest.activeAnnotationCount, 2);
+  assert.equal(exportedManifest.excludedCancelledAnnotationCount, 1);
+  assert.equal(exportedManifest.profileRevisionCount, 1);
+  const exportedProfiles = JSON.parse(archiveEntries.get("01_participant_profiles.json"));
+  assert.deepEqual(exportedProfiles.map(({ participantId }) => participantId), ["P1A", "P1B"]);
+  assert.deepEqual(Object.keys(exportedProfiles[0].profiles), ["task1", "task2", "task3"]);
+  assert.equal(exportedProfiles[0].revisions.length, 1);
+  assert.equal(exportedProfiles[0].revisions[0].originalProfile.interests, "展览与散步");
+  assert.equal(exportedProfiles[0].revisions[0].revisedProfile.interests, "安静展览与无障碍室内活动");
+  assert.equal(exportedProfiles[0].revisions[0].diff.some(({ path }) => path === "studyIntent.desiredUnderstanding"), true);
+  const exportedRecaps = JSON.parse(archiveEntries.get("02_participant_recaps_and_annotations.json"));
+  assert.equal(exportedRecaps.length, 3);
+  assert.equal(exportedRecaps[0].participants.find(({ participantId }) => participantId === "P1A").annotations.length, 1);
+  const exportedConversations = JSON.parse(archiveEntries.get("03_agent_conversations_and_annotations.json"));
+  assert.equal(exportedConversations.length, 3);
+  const markedMessage = exportedConversations[0].messages.find(({ messageId }) => messageId === "P1B_T1_1");
+  assert.equal(markedMessage.annotations.length, 1);
+  assert.deepEqual(markedMessage.annotations[0].tagLabels, ["Agent越权", "信任下降"]);
+  assert.equal(exportedConversations[0].messages.find(({ messageId }) => messageId === "P1A_T1_1").annotations.length, 0);
+  const cleanedMarkdown = archiveEntries.get("cleaned_experiment_data.md").toString("utf8");
+  assert.match(cleanedMarkdown, /第一部分：每位参与者的三个 Profile/);
+  assert.match(cleanedMarkdown, /Profile 前后修改记录/);
+  assert.match(cleanedMarkdown, /原配置：展览与散步/);
+  assert.match(cleanedMarkdown, /修改后：安静展览与无障碍室内活动/);
+  assert.match(cleanedMarkdown, /第二部分：每位参与者的 Recap 与人工标记/);
+  assert.match(cleanedMarkdown, /第三部分：每对 Agent 的交流记录与人工标记/);
+  assert.match(cleanedMarkdown, /Agent越权/);
   assert.equal(archive.includes(Buffer.from('"apiKey": "test"')), false);
   await request(`/api/sessions/${sessionId}`, { token: p1a.token, method: "DELETE", expected: 403 });
   const deleted = await request(`/api/sessions/${sessionId}`, { token: admin.token, method: "DELETE" });
@@ -468,7 +517,7 @@ try {
   await request(`/api/sessions/${task3Created.session.id}`, { token: admin.token, method: "DELETE" });
   const emptyHistory = await request("/api/sessions", { token: admin.token });
   assert.equal(emptyHistory.sessions.length, 0);
-  console.log("Smoke test passed: consent, profiles, sessions, structured recaps, annotations, workflow, admin ZIP export without API keys, history, and deletion.");
+  console.log("Smoke test passed: consent, profiles, sessions, structured recaps, annotations, workflow, cleaned admin ZIP export, history, and deletion.");
 } finally {
   await close(appServer);
   await close(mock);

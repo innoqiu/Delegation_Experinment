@@ -136,6 +136,19 @@ p { color: var(--muted); line-height: 1.55; }
 .profile-comparison-grid.editing .custom-field-delete { width: 100%; margin-top: 0; }
 .revision-result { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 12px 15px; border: 1px solid #b9ddc6; border-radius: var(--radius); background: var(--green-soft); font-size: 12px; }
 .revision-result span { padding: 3px 7px; border-radius: 999px; color: var(--green); background: #fff; }
+.admin-profile-revisions { display: grid; gap: 14px; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+.admin-revisions-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.admin-revisions-heading h2 { margin-bottom: 4px; }
+.admin-revisions-heading p { margin: 0; font-size: 12px; }
+.admin-revisions-heading > span { flex: 0 0 auto; padding: 4px 9px; border-radius: 999px; color: var(--blue); background: var(--blue-soft); font-size: 11px; font-weight: 700; }
+.admin-revision-list { display: grid; gap: 10px; }
+.admin-revision-record { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: #fafbfc; }
+.admin-revision-record > summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 15px; cursor: pointer; list-style-position: inside; }
+.admin-revision-record > summary:hover { background: #f5f7fb; }
+.admin-revision-record > summary > div { display: inline-flex; align-items: center; gap: 9px; }
+.admin-revision-record > summary span, .admin-revision-record > summary small { color: var(--muted); font-size: 11px; font-style: normal; }
+.admin-revision-record > summary em { padding: 3px 7px; border-radius: 999px; color: var(--green); background: var(--green-soft); font-size: 10px; font-style: normal; font-weight: 700; }
+.admin-revision-body { display: grid; gap: 13px; padding: 15px; border-top: 1px solid var(--border); background: #fff; }
 .section-heading h2 { margin-bottom: 4px; }
 .section-heading p { max-width: 920px; margin: 0; font-size: 13px; }
 .disabled-profile { height: 40px; display: flex; align-items: center; color: var(--faint); font-size: 13px; }
@@ -554,6 +567,7 @@ p { color: var(--muted); line-height: 1.55; }
   .revision-quick-unlock { grid-template-columns: auto minmax(0, 1fr); justify-content: stretch; }
   .revision-password-row label { min-width: 0; }
   .revision-slide-toggle { justify-content: space-between; }
+  .admin-revisions-heading, .admin-revision-record > summary, .admin-revision-record > summary > div { align-items: flex-start; flex-direction: column; }
   .follow-up-config-button { width: 100%; }
   .discussion-preparation-actions { align-items: stretch; flex-direction: column; }
   .history-table th:nth-child(2), .history-table td:nth-child(2), .history-table th:nth-child(4), .history-table td:nth-child(4), .history-table th:nth-child(6), .history-table td:nth-child(6), .history-table th:nth-child(7), .history-table td:nth-child(7), .history-table th:nth-child(8), .history-table td:nth-child(8) { display: none; }

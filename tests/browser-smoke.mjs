@@ -201,14 +201,14 @@ try {
   await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.trim() === 'Profile结构').click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('输入框示例')"), "Admin Profile schema editor did not expose placeholder editing");
   await evaluate(client.call, "[...document.querySelectorAll('.nav-item')].find((item) => item.innerText.trim() === '历史').click(); true");
-  await waitFor(() => evaluate(client.call, "[...document.querySelectorAll('button')].some((item) => item.innerText.includes('下载全部记录'))"), "Admin ZIP export button did not render");
+  await waitFor(() => evaluate(client.call, "[...document.querySelectorAll('button')].some((item) => item.innerText.includes('下载整理后数据'))"), "Admin cleaned-data ZIP export button did not render");
 
   const browserErrors = client.events.filter((event) => (
     event.method === "Runtime.exceptionThrown"
     || (event.method === "Log.entryAdded" && ["error", "warning"].includes(event.params?.entry?.level))
   ));
   assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}`);
-  console.log(`Browser smoke passed: participant draft recovery, bottom save, admin ZIP export control, consent, responsive introduction, and profile schema editing. Screenshots: ${screenshotPath}, ${introScreenshotPath}, ${introMobileScreenshotPath}, ${profileScreenshotPath}, ${adminScreenshotPath}`);
+  console.log(`Browser smoke passed: participant draft recovery, bottom save, admin cleaned-data ZIP export control, consent, responsive introduction, and profile schema editing. Screenshots: ${screenshotPath}, ${introScreenshotPath}, ${introMobileScreenshotPath}, ${profileScreenshotPath}, ${adminScreenshotPath}`);
 } finally {
   try { await client?.call("Browser.close"); } catch { chrome?.kill(); }
   appProcess?.kill();

@@ -5,6 +5,8 @@ import { Icon } from "../components/Icons.jsx";
 
 const TASK_KEYS = ["task1", "task2", "task3"];
 const PROFILE_DRAFT_VERSION = 1;
+const NOOP = () => {};
+const formatRevisionDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 
 function profileDraftKey(participantId, revisionSessionId = "") {
   const scope = revisionSessionId ? `revision:${revisionSessionId}` : "base";
@@ -165,6 +167,50 @@ function RevisionResult({ revision }) {
   );
 }
 
+function AdminRevisionHistory({ participantId, records, loading, schemas }) {
+  return (
+    <section className="admin-profile-revisions">
+      <div className="admin-revisions-heading">
+        <div><h2>Profile 前后修改记录</h2><p>以下记录来自参与者在真人讨论后保存的会话级修改副本；不会覆盖上方基础 Profile。</p></div>
+        <span>{records.length} 次</span>
+      </div>
+      {loading ? <div className="screen-center compact"><div className="loader" />正在读取修改记录…</div> : null}
+      {!loading && !records.length ? <div className="empty-state compact">{participantId} 暂无 Profile 修改记录。</div> : null}
+      <div className="admin-revision-list">
+        {records.map((record, index) => {
+          const revision = record.revision || {};
+          const task = record.task || revision.task;
+          const schema = record.profileSchemaSnapshot?.fields ? record.profileSchemaSnapshot : schemas?.[task];
+          if (!schema) return null;
+          return (
+            <details className="admin-revision-record" key={revision.id || `${record.sessionId}-${index}`} open={index === 0}>
+              <summary>
+                <div><strong>{record.recordName}</strong><span>{schema.title || task}</span></div>
+                <div><small>{formatRevisionDate(revision.createdAt)}</small><em>{revision.noChanges ? "无修改" : `${revision.diff?.length || 0} 项修改`}</em></div>
+              </summary>
+              <div className="admin-revision-body">
+                {revision.diff?.length ? (
+                  <div className="revision-result"><strong>发生变化的字段</strong>{revision.diff.map((item) => <span key={item.path}>{item.label || item.path}</span>)}</div>
+                ) : <div className="revision-result"><strong>参与者保留了原配置，没有修改字段。</strong></div>}
+                <div className="profile-comparison-grid editing">
+                  <div className="profile-version-panel profile-version-original">
+                    <div className="profile-version-heading"><span>原配置</span><small>该次代理互动实际使用</small></div>
+                    <ProfileFields task={task} schema={schema} profile={revision.originalProfile || {}} readOnly onUpdate={NOOP} onStudyIntentUpdate={NOOP} onAddCustomField={NOOP} onUpdateCustomField={NOOP} onRemoveCustomField={NOOP} />
+                  </div>
+                  <div className="profile-version-panel profile-version-revised">
+                    <div className="profile-version-heading"><span>修改后</span><small>真人讨论后保存的副本</small></div>
+                    <ProfileFields task={task} schema={schema} profile={revision.revisedProfile || {}} readOnly onUpdate={NOOP} onStudyIntentUpdate={NOOP} onAddCustomField={NOOP} onUpdateCustomField={NOOP} onRemoveCustomField={NOOP} />
+                  </div>
+                </div>
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function AgentConfigPage({ user, notify }) {
   const [participants, setParticipants] = useState([]);
   const [selectedId, setSelectedId] = useState(user.role === "participant" ? user.id : "");
@@ -180,6 +226,8 @@ export default function AgentConfigPage({ user, notify }) {
   const [revisionEnabled, setRevisionEnabled] = useState({});
   const [unlocking, setUnlocking] = useState(false);
   const [revisionSessionId, setRevisionSessionId] = useState(null);
+  const [adminRevisions, setAdminRevisions] = useState([]);
+  const [adminRevisionsLoading, setAdminRevisionsLoading] = useState(false);
   const readOnly = user.role === "admin";
 
   useEffect(() => {
@@ -209,6 +257,21 @@ export default function AgentConfigPage({ user, notify }) {
       .catch((error) => notify(error.message, "error"))
       .finally(() => setLoading(false));
   }, [notify, readOnly, schemas, selectedId]);
+
+  useEffect(() => {
+    if (!readOnly || !selectedId) {
+      setAdminRevisions([]);
+      setAdminRevisionsLoading(false);
+      return;
+    }
+    let active = true;
+    setAdminRevisionsLoading(true);
+    api(`/api/profile-revisions?participantId=${encodeURIComponent(selectedId)}`)
+      .then(({ revisions }) => { if (active) setAdminRevisions(revisions || []); })
+      .catch((error) => { if (active) notify(error.message, "error"); })
+      .finally(() => { if (active) setAdminRevisionsLoading(false); });
+    return () => { active = false; };
+  }, [notify, readOnly, selectedId]);
 
   useEffect(() => {
     if (!readOnly && selectedId && draftDirty) writeProfileDraft(selectedId, profiles, revisionSessionId || "");
@@ -427,6 +490,7 @@ export default function AgentConfigPage({ user, notify }) {
           ))}
         </div>
       )}
+      {readOnly && selectedId ? <AdminRevisionHistory participantId={selectedId} records={adminRevisions} loading={adminRevisionsLoading} schemas={schemas} /> : null}
       {!readOnly && selectedId && (!revisionSessionId || (revisionSession && revisionUnlocked)) ? (
         <div className="profile-save-footer">
           <div className="profile-draft-status" aria-live="polite">
