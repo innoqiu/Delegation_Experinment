@@ -259,10 +259,12 @@ try {
   })()`);
   await waitFor(() => evaluate(client.call, "!document.querySelector('.revision-quick-unlock button').disabled"), "Revision unlock button remained disabled");
   await evaluate(client.call, "document.querySelector('.revision-quick-unlock button').click(); true");
-  await waitFor(() => evaluate(client.call, "Boolean(document.querySelector('.revision-slide-toggle input'))"), "Revision toggle did not unlock");
-  await evaluate(client.call, "document.querySelector('.revision-slide-toggle input').click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelectorAll('.revision-slide-toggle input').length === 3"), "All three Profile revision toggles did not unlock");
+  assert.equal(await evaluate(client.call, "document.querySelectorAll('.profile-version-original').length"), 3);
+  assert.equal(await evaluate(client.call, "[...document.querySelectorAll('.profile-version-original textarea')].every((node) => node.readOnly)"), true);
+  await evaluate(client.call, "[...document.querySelectorAll('.revision-slide-toggle input')].forEach((node) => node.click()); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('原配置') && document.body.innerText.includes('修改副本')"), "Side-by-side revision view did not render");
-  assert.equal(await evaluate(client.call, "document.querySelector('.profile-version-original textarea')?.readOnly"), true);
+  assert.equal(await evaluate(client.call, "document.querySelectorAll('.profile-version-revised').length"), 3);
   await evaluate(client.call, `(() => {
     const textarea = document.querySelector('.profile-version-revised .study-intent-card textarea');
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
@@ -274,7 +276,8 @@ try {
   await evaluate(client.call, "document.querySelector('.profile-save-footer .button-primary').click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('配置回看已记录')"), "Revision diff was not saved");
   const participantSession = await api(`/api/sessions/${created.session.id}`, { token: participant.token });
-  const savedRevision = participantSession.session.configurationRevisions.P0A.at(-1);
+  assert.deepEqual(participantSession.session.configurationRevisions.P0A.map((revision) => revision.task), ["task1", "task2", "task3"]);
+  const savedRevision = participantSession.session.configurationRevisions.P0A.find((revision) => revision.task === "task1");
   assert.equal(savedRevision.originalProfile.studyIntent.authorizationIntent === savedRevision.revisedProfile.studyIntent.authorizationIntent, false);
   const revisionScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(revisionScreenshotPath, Buffer.from(revisionScreenshot.data, "base64"));

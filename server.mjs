@@ -1745,7 +1745,11 @@ async function handleApi(req, res, url) {
         sessionId: session.id,
         recordName: session.recordName,
         task: revision.task || session.task,
-        profileSchemaSnapshot: clone(session.profileSchemaSnapshot || store.profileSchemas?.[revision.task || session.task] || {}),
+        profileSchemaSnapshot: clone(
+          (revision.task || session.task) === session.task
+            ? session.profileSchemaSnapshot || store.profileSchemas?.[session.task] || {}
+            : store.profileSchemas?.[revision.task] || {}
+        ),
         revision: clone(revision),
       }))
     )).sort((a, b) => String(b.revision.createdAt || "").localeCompare(String(a.revision.createdAt || "")));
@@ -2082,13 +2086,20 @@ async function handleApi(req, res, url) {
     if (!session || !canAccessSession(auth, session)) throw httpError(404, "记录不存在");
     const body = await readJson(req);
     verifyRevisionPassword(body.password);
-    const original = session.profileSnapshot?.[auth.id] || {};
-    const revisedProfile = sanitizeRevisionProfile(body.revisedProfile || original, session.profileSchemaSnapshot || {});
-    const diff = profileRevisionDiff(original, revisedProfile, session.profileSchemaSnapshot || {});
+    const task = body.task ? validateTaskKey(String(body.task)) : session.task;
+    const usesSessionSnapshot = task === session.task;
+    const schema = usesSessionSnapshot
+      ? session.profileSchemaSnapshot || store.profileSchemas?.[task] || {}
+      : store.profileSchemas?.[task] || {};
+    const original = usesSessionSnapshot
+      ? session.profileSnapshot?.[auth.id] || store.participants[auth.id]?.profiles?.[task] || {}
+      : store.participants[auth.id]?.profiles?.[task] || {};
+    const revisedProfile = sanitizeRevisionProfile(body.revisedProfile || original, schema);
+    const diff = profileRevisionDiff(original, revisedProfile, schema);
     const revision = {
       id: randomUUID(),
       participantId: auth.id,
-      task: session.task,
+      task,
       diff,
       noChanges: diff.length === 0,
       originalProfile: clone(original),

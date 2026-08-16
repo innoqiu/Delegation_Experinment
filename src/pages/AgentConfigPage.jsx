@@ -216,10 +216,12 @@ export default function AgentConfigPage({ user, notify }) {
   const [selectedId, setSelectedId] = useState(user.role === "participant" ? user.id : "");
   const [schemas, setSchemas] = useState(null);
   const [profiles, setProfiles] = useState(emptyProfiles());
+  const [originalProfiles, setOriginalProfiles] = useState(emptyProfiles());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
   const [revisionSession, setRevisionSession] = useState(null);
+  const [revisionSessions, setRevisionSessions] = useState({});
   const [lastRevision, setLastRevision] = useState(null);
   const [revisionPassword, setRevisionPassword] = useState("");
   const [revisionUnlocked, setRevisionUnlocked] = useState(false);
@@ -252,6 +254,7 @@ export default function AgentConfigPage({ user, notify }) {
         const savedProfiles = { ...emptyProfiles(schemas), ...(participant.profiles || {}) };
         const draft = readOnly || revisionSessionId ? null : readProfileDraft(selectedId);
         setProfiles(draft ? { ...savedProfiles, ...draft } : savedProfiles);
+        if (!revisionSessionId) setOriginalProfiles(savedProfiles);
         setDraftDirty(Boolean(draft));
       })
       .catch((error) => notify(error.message, "error"))
@@ -280,24 +283,14 @@ export default function AgentConfigPage({ user, notify }) {
   useEffect(() => {
     if (!revisionSessionId) {
       setRevisionSession(null);
+      setRevisionSessions({});
       setLastRevision(null);
       setRevisionUnlocked(false);
       setRevisionPassword("");
       setRevisionEnabled({});
-      return;
+      return undefined;
     }
-    api(`/api/sessions/${revisionSessionId}`)
-      .then(({ session }) => {
-        setRevisionSession(session);
-        const latest = session.configurationRevisions?.[user.id]?.at(-1) || null;
-        const original = session.profileSnapshot?.[user.id] || {};
-        const draft = readProfileDraft(user.id, revisionSessionId);
-        const revised = draft?.[session.task] || latest?.revisedProfile || original;
-        setProfiles((current) => ({ ...current, [session.task]: revised }));
-        setDraftDirty(Boolean(draft));
-        setLastRevision(latest);
-      })
-      .catch((error) => notify(error.message, "error"));
+    return undefined;
   }, [notify, revisionSessionId, user.id]);
 
   async function unlockRevision() {
@@ -307,10 +300,11 @@ export default function AgentConfigPage({ user, notify }) {
       let targetSessionId = revisionSessionId;
       if (!targetSessionId) {
         const { sessions } = await api("/api/sessions");
-        const target = sessions.find((session) => (
-          session.status === "completed"
+        const eligible = sessions.filter((session) => (
+          ["completed", "completed_with_errors"].includes(session.status)
           && session.recaps?.[user.id]?.status === "ready"
         ));
+        const target = eligible[0];
         if (!target) throw new Error("暂无可回看的已完成任务");
         targetSessionId = target.id;
       }
@@ -318,9 +312,58 @@ export default function AgentConfigPage({ user, notify }) {
         method: "POST",
         body: jsonBody({ password: revisionPassword }),
       });
+      const { sessions } = await api("/api/sessions");
+      const eligible = sessions.filter((session) => (
+        ["completed", "completed_with_errors"].includes(session.status)
+        && session.recaps?.[user.id]?.status === "ready"
+      ));
+      const summariesByTask = Object.fromEntries(TASK_KEYS.map((task) => [
+        task,
+        eligible.find((session) => session.task === task) || null,
+      ]));
+      const sessionIds = [...new Set([
+        targetSessionId,
+        ...Object.values(summariesByTask).filter(Boolean).map((session) => session.id),
+      ])];
+      const sessionDetails = await Promise.all(sessionIds.map((sessionId) => api(`/api/sessions/${sessionId}`)));
+      const detailsById = Object.fromEntries(sessionDetails.map(({ session }) => [session.id, session]));
+      const primarySession = detailsById[targetSessionId];
+      const taskSessions = Object.fromEntries(TASK_KEYS.map((task) => [
+        task,
+        detailsById[summariesByTask[task]?.id] || primarySession,
+      ]));
+      const draft = readProfileDraft(user.id, targetSessionId);
+      const originals = { ...originalProfiles };
+      const revised = { ...profiles };
+      const latestRevisions = [];
+      for (const task of TASK_KEYS) {
+        const taskSession = taskSessions[task];
+        const usesTaskSnapshot = taskSession?.task === task;
+        const original = usesTaskSnapshot
+          ? taskSession.profileSnapshot?.[user.id] || originalProfiles[task] || {}
+          : originalProfiles[task] || {};
+        const latest = (taskSession?.configurationRevisions?.[user.id] || [])
+          .filter((revision) => (revision.task || taskSession.task) === task)
+          .at(-1) || null;
+        originals[task] = original;
+        revised[task] = draft?.[task] || latest?.revisedProfile || original;
+        if (latest) latestRevisions.push(latest);
+      }
+      setRevisionSession(primarySession);
+      setRevisionSessions(taskSessions);
+      setOriginalProfiles(originals);
+      setProfiles(revised);
+      setDraftDirty(Boolean(draft));
+      setLastRevision(latestRevisions.length ? {
+        noChanges: latestRevisions.every((revision) => revision.noChanges),
+        diff: latestRevisions.flatMap((revision) => (revision.diff || []).map((item) => ({
+          ...item,
+          path: `${revision.task}.${item.path}`,
+        }))),
+      } : null);
       setRevisionSessionId(targetSessionId);
       setRevisionUnlocked(true);
-      notify("再配置已解锁；使用卡片右侧开关开始对照修改");
+      notify("三个 Profile 已解锁；使用各卡片右侧开关开始对照修改");
     } catch (error) {
       notify(error.message, "error");
     } finally {
@@ -366,14 +409,21 @@ export default function AgentConfigPage({ user, notify }) {
     try {
       if (revisionSessionId) {
         if (!revisionUnlocked) throw new Error("请先输入再配置密码");
-        const revisionResult = await api(`/api/sessions/${revisionSessionId}/config-revisions`, {
+        const revisionResults = await Promise.all(TASK_KEYS.map((task) => api(`/api/sessions/${revisionSessions[task]?.id || revisionSessionId}/config-revisions`, {
           method: "POST",
-          body: jsonBody({ password: revisionPassword, revisedProfile: profiles[revisionSession.task] }),
+          body: jsonBody({ password: revisionPassword, task, revisedProfile: profiles[task] }),
+        })));
+        const revisions = revisionResults.map((result) => result.revision);
+        setLastRevision({
+          noChanges: revisions.every((revision) => revision.noChanges),
+          diff: revisions.flatMap((revision) => (revision.diff || []).map((item) => ({
+            ...item,
+            path: `${revision.task}.${item.path}`,
+          }))),
         });
-        setLastRevision(revisionResult.revision);
         clearProfileDraft(selectedId, revisionSessionId);
         setDraftDirty(false);
-        notify("修改副本已保存；本次会话的原配置保持不变");
+        notify("三个 Profile 的修改副本与 diff 已保存；原配置保持不变");
       } else {
         const result = await api(`/api/profiles/${selectedId}`, { method: "PUT", body: jsonBody({ profiles }) });
         setProfiles(result.participant.profiles);
@@ -389,9 +439,14 @@ export default function AgentConfigPage({ user, notify }) {
   }
 
   const title = useMemo(() => readOnly ? `查看受试者 ${selectedId || "—"} 的配置` : `${selectedId} 的 Agent 配置`, [readOnly, selectedId]);
-  const visibleTasks = revisionSession ? [revisionSession.task] : revisionSessionId ? [] : TASK_KEYS;
+  const visibleTasks = revisionSessionId && !revisionSession ? [] : TASK_KEYS;
   const effectiveSchemas = revisionSession
-    ? { ...(schemas || {}), [revisionSession.task]: revisionSession.profileSchemaSnapshot || schemas?.[revisionSession.task] }
+    ? Object.fromEntries(TASK_KEYS.map((task) => [
+      task,
+      revisionSessions[task]?.task === task
+        ? revisionSessions[task].profileSchemaSnapshot || schemas?.[task]
+        : schemas?.[task],
+    ]))
     : schemas;
 
   if (loading || !schemas) return <div className="screen-center"><div className="loader" />正在读取配置…</div>;
@@ -415,7 +470,7 @@ export default function AgentConfigPage({ user, notify }) {
                 aria-label="再配置密码"
                 disabled={revisionUnlocked}
               />
-              <small>{revisionSession ? revisionSession.recordName : "真人讨论后由实验员开放"}</small>
+              <small>{revisionSession ? "三个 Profile 均已开放对照修改" : "真人讨论后由实验员开放"}</small>
             </form>
           ) : null}
         </div>
@@ -447,7 +502,7 @@ export default function AgentConfigPage({ user, notify }) {
                     <ProfileFields
                       task={task}
                       schema={effectiveSchemas[task]}
-                      profile={revisionSession.profileSnapshot?.[user.id] || {}}
+                      profile={originalProfiles[task] || {}}
                       readOnly
                       onUpdate={() => {}}
                       onStudyIntentUpdate={() => {}}
