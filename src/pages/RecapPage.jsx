@@ -122,7 +122,9 @@ function FollowUpFlow({ session, user, onWorkflowSaved, notify }) {
         <div className="follow-up-card">
           <h3>为真人讨论做准备</h3>
           <div className="discussion-preparation">
-            <p>接下来，你将与另一位参与者进行真人讨论；此前，你们的代理已经彼此沟通过。请先独立记录你希望在讨论中确认或处理的事项，不必现在与对方讨论。</p>
+            <p>{session.task === "task4"
+              ? "接下来，你将与另一位参与者进行真人讨论；此前，单个协商助手已根据你们的Profile生成共同建议。请先独立记录你希望在讨论中确认或处理的事项，不必现在与对方讨论。"
+              : "接下来，你将与另一位参与者进行真人讨论；此前，你们的代理已经彼此沟通过。请先独立记录你希望在讨论中确认或处理的事项，不必现在与对方讨论。"}</p>
             <div className="discussion-preparation-fields">
               <label>
                 <span>你觉得对方对于这件事的预期是什么？他期待你做什么？</span>
@@ -178,6 +180,7 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
   }, [selected?.id, selected?.status]);
 
   const recapEntries = useMemo(() => {
+    if (selected?.task === "task4") return selected.sharedRecap ? [["shared", selected.sharedRecap]] : [];
     const recaps = selected?.recaps || {};
     if (user.role !== "admin") return Object.entries(recaps);
     return [selected?.participantA, selected?.participantB]
@@ -191,7 +194,7 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
 
   function addAnnotation(annotation) {
     setSelected((current) => ({ ...current, annotations: [...(current.annotations || []), annotation] }));
-    if (annotation.tags.includes("details_requested")) setShowTranscript(true);
+    if (annotation.tags.includes("details_requested") && selected?.task !== "task4") setShowTranscript(true);
   }
 
   function cancelAnnotations(cancelledAnnotations) {
@@ -224,15 +227,15 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
         {!selected ? <div className="empty-state">选择一条会话查看recap。</div> : (
           <>
             <div className="recap-header">
-              <div><h1>{selected.recordName}</h1><p>创建于 {formatDate(selected.createdAt)} · {selected.rounds} 回合 · {selected.status}</p></div>
-              {selected.termination ? <span className="termination-badge">{selected.termination.reason === "mutual_private_audit" ? "双方私有审核通过" : "达到最大回合"}</span> : null}
+              <div><h1>{selected.recordName}</h1><p>创建于 {formatDate(selected.createdAt)} · {selected.task === "task4" ? "单AI直接对齐" : `${selected.rounds} 回合`} · {selected.status}</p></div>
+              {selected.termination ? <span className="termination-badge">{selected.termination.reason === "single_assistant_completed" ? "集中式对齐完成" : selected.termination.reason === "mutual_private_audit" ? "双方私有审核通过" : "达到最大回合"}</span> : null}
             </div>
-            <div className="review-instruction"><strong>先阅读Recap并作初步判断。</strong>如果某处不能充分解释结果，选中对应文字，标记“需要查看详细记录”，再查看下方对话。</div>
-            <section className={`recap-document ${user.role === "admin" ? "recap-compare" : ""}`}>
+            <div className="review-instruction"><strong>{selected.task === "task4" ? "这是单AI根据双方三个Profile直接生成的共同Recap。" : "先阅读Recap并作初步判断。"}</strong>{selected.task === "task4" ? "本任务没有代理对话记录；你仍可选中文字进行标记并说明原因。" : "如果某处不能充分解释结果，选中对应文字，标记“需要查看详细记录”，再查看下方对话。"}</div>
+            <section className={`recap-document ${user.role === "admin" && selected.task !== "task4" ? "recap-compare" : ""}`}>
               {recapEntries.length ? recapEntries.map(([participantId, recap], index) => (
                 <div className="recap-entry" key={participantId}>
                   {user.role === "admin" ? (
-                    <div className="recap-column-header"><div><span>Agent {index + 1}</span><h2>{participantId} 的Recap</h2></div><small className={`recap-status ${recap.status}`}>{recap.status}</small></div>
+                    <div className="recap-column-header"><div><span>{participantId === "shared" ? "单AI协商助手" : `Agent ${index + 1}`}</span><h2>{participantId === "shared" ? "双方共享Recap" : `${participantId} 的Recap`}</h2></div><small className={`recap-status ${recap.status}`}>{recap.status}</small></div>
                   ) : null}
                   {recap.status === "ready" ? (
                     <RecapRenderer
@@ -242,18 +245,18 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
                       annotations={selected.annotations || []}
                       onAnnotationSaved={addAnnotation}
                       onAnnotationCancelled={cancelAnnotations}
-                      onOpenTranscript={openTranscript}
+                      onOpenTranscript={selected.task === "task4" ? undefined : openTranscript}
                       notify={notify}
                     />
                   ) : <div className="form-error">{recap.error || "Recap正在生成"}</div>}
                 </div>
               )) : <div className="empty-state compact">Recap尚未生成。当前状态：{selected.status}</div>}
             </section>
-            <button className="transcript-toggle" onClick={() => setShowTranscript((value) => !value)}>{showTranscript ? "收起完整对话" : "查看完整对话记录"}<Icon name="chevron" size={16} /></button>
-            {showTranscript ? (
+            {selected.task !== "task4" ? <button className="transcript-toggle" onClick={() => setShowTranscript((value) => !value)}>{showTranscript ? "收起完整对话" : "查看完整对话记录"}<Icon name="chevron" size={16} /></button> : null}
+            {selected.task !== "task4" && showTranscript ? (
               <section className="recap-transcript" id="recap-transcript"><div className="panel-heading"><div><h2>完整对话记录</h2><p>选中文字后，可以记录内容反应、信任变化或代理越权，并简述原因。</p></div></div><SessionTranscript session={selected} user={user} notify={notify} onMessageUpdated={updateMessage} annotations={selected.annotations || []} onAnnotationSaved={addAnnotation} onAnnotationCancelled={cancelAnnotations} /></section>
             ) : null}
-            {user.role === "participant" && selected.recaps?.[user.id]?.status === "ready" ? (
+            {user.role === "participant" && (selected.task === "task4" ? selected.sharedRecap?.status === "ready" : selected.recaps?.[user.id]?.status === "ready") ? (
               <FollowUpFlow
                 session={selected}
                 user={user}

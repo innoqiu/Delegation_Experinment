@@ -205,7 +205,7 @@ try {
     document.querySelector('.login-panel button').click();
     return true;
   })()`);
-  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('使用说明')"), "Participant app did not load");
+  await waitFor(() => evaluate(client.call, "document.querySelectorAll('.nav-list .nav-item').length === 3"), "Participant app did not load");
   await evaluate(client.call, `([...document.querySelectorAll('.nav-item')].find((node) => node.innerText.trim() === 'Recap')).click(); true`);
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('周六下午的候选计划')"), "Recap did not render");
 

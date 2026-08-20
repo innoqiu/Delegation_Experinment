@@ -26,10 +26,17 @@ const LEGACY_LAYOUTS = {
     ["open_items", "待确认"],
     ["actions", "你的决定"],
   ],
+  task4: [
+    ["task1_alignment", "Task 1 · 社交计划"],
+    ["task2_alignment", "Task 2 · 新关系介绍"],
+    ["task3_alignment", "Task 3 · 资源分配"],
+    ["cross_task_limits", "跨任务限制与不确定性"],
+    ["actions", "双方需要确认"],
+  ],
 };
 
 const LEGACY_MAX_ITEMS = { candidate: 6, allocation: 3, turning_points: 2, actions: 3 };
-const LEGACY_HEADLINES = { task1: "社交计划概览", task2: "关系探索建议", task3: "资源分配结果" };
+const LEGACY_HEADLINES = { task1: "社交计划概览", task2: "关系探索建议", task3: "资源分配结果", task4: "单AI直接对齐结果" };
 
 function cleanLegacyLine(value) {
   return String(value || "")

@@ -100,9 +100,9 @@ export default function ModelConfigPage({ notify }) {
       </div>
       <section className="task-editor">
         <div className="task-tabs">
-          {["task1", "task2", "task3"].map((key, index) => (
+          {["task1", "task2", "task3", "task4"].map((key, index) => (
             <button key={key} className={activeTask === key ? "active" : ""} onClick={() => setActiveTask(key)}>
-              Task {index + 1}{key === "task3" && !config.tasks?.task3?.enabled ? "（未启用）" : ""}
+              Task {index + 1}{!config.tasks?.[key]?.enabled ? "（未启用）" : ""}
             </button>
           ))}
         </div>
@@ -111,11 +111,11 @@ export default function ModelConfigPage({ notify }) {
             <div className="task-meta-row">
               <Field label="任务名称"><TextInput value={task.label} onChange={(e) => updateTask("label", e.target.value)} /></Field>
               <label className="switch-row"><input type="checkbox" checked={task.enabled} onChange={(e) => updateTask("enabled", e.target.checked)} /><span>启用该任务</span></label>
-              <div className="fixed-rule"><span>最大回合</span><strong>10</strong></div>
+              <div className="fixed-rule"><span>{activeTask === "task4" ? "运行方式" : "最大回合"}</span><strong>{activeTask === "task4" ? "单次生成" : "10"}</strong></div>
             </div>
-            <Field label="系统提示词" hint="用于指导两个代理完成当前Profile；参与者配置将在运行时附加。"><TextArea className="code-textarea" rows="14" value={task.systemPrompt} onChange={(e) => updateTask("systemPrompt", e.target.value)} /></Field>
-            <Field label="第一阶段结束信号" hint="仅供模型协议使用；服务端会将其转换为不可见元数据，不保存到transcript，也不发送给另一代理。"><TextInput value={task.completionPhrase} readOnly /></Field>
-            <Field label="Recap提取规则" hint="界面标题与字段结构由系统固定，以保证A/B一致；这里仅配置各Task应提取或忽略的信息。"><TextArea className="code-textarea" rows="8" value={task.recapPrompt} onChange={(e) => updateTask("recapPrompt", e.target.value)} /></Field>
+            <Field label="系统提示词" hint={activeTask === "task4" ? "指导单个中立AI同时读取双方Profile 1–3并直接求解；不生成代理对话。" : "用于指导两个代理完成当前Profile；参与者配置将在运行时附加。"}><TextArea className="code-textarea" rows="14" value={task.systemPrompt} onChange={(e) => updateTask("systemPrompt", e.target.value)} /></Field>
+            {activeTask !== "task4" ? <Field label="第一阶段结束信号" hint="仅供模型协议使用；服务端会将其转换为不可见元数据，不保存到transcript，也不发送给另一代理。"><TextInput value={task.completionPhrase} readOnly /></Field> : null}
+            <Field label="Recap提取规则" hint={activeTask === "task4" ? "Task 4固定生成一份同时覆盖前三个任务的双方共享Recap。" : "界面标题与字段结构由系统固定，以保证A/B一致；这里仅配置各Task应提取或忽略的信息。"}><TextArea className="code-textarea" rows="8" value={task.recapPrompt} onChange={(e) => updateTask("recapPrompt", e.target.value)} /></Field>
           </div>
         )}
       </section>

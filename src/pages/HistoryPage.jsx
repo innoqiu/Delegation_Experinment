@@ -84,7 +84,7 @@ export default function HistoryPage({ user, notify }) {
       <div className="history-main">
         <div className="history-toolbar">
           <label className="search-box"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索记录名称或受试者" /></label>
-          <select className="select" value={task} onChange={(event) => setTask(event.target.value)}><option value="all">全部任务</option><option value="task1">Task 1</option><option value="task2">Task 2</option><option value="task3">Task 3</option></select>
+          <select className="select" value={task} onChange={(event) => setTask(event.target.value)}><option value="all">全部任务</option><option value="task1">Task 1</option><option value="task2">Task 2</option><option value="task3">Task 3</option><option value="task4">Task 4</option></select>
           <select className="select" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option></select>
           <button className="button button-secondary history-export" onClick={downloadAll} disabled={exporting}><Icon name="download" size={16} />{exporting ? "正在整理…" : "下载整理后数据"}</button>
           <button className="icon-button" onClick={load}><Icon name="refresh" size={17} /></button>
@@ -95,7 +95,7 @@ export default function HistoryPage({ user, notify }) {
             <tbody>
               {filtered.map((session) => {
                 const commentCount = session.transcript?.reduce((sum, item) => sum + (item.comments?.length || 0), 0) || 0;
-                return <tr key={session.id} className={selected?.id === session.id ? "selected" : ""} onClick={() => open(session.id)}><td><strong>{session.recordName}</strong></td><td>{session.participantA} ↔ {session.participantB}</td><td>{session.task.replace("task", "Task ")}</td><td>{formatDate(session.createdAt)}</td><td><span className={`table-status ${session.status}`}>{session.status}</span></td><td>{session.rounds}/10</td><td>{Object.keys(session.recaps || {}).length}/2</td><td>{commentCount}</td><td><button className="icon-button"><Icon name="eye" size={16} /></button></td></tr>;
+                return <tr key={session.id} className={selected?.id === session.id ? "selected" : ""} onClick={() => open(session.id)}><td><strong>{session.recordName}</strong></td><td>{session.participantA} ↔ {session.participantB}</td><td>{session.task.replace("task", "Task ")}</td><td>{formatDate(session.createdAt)}</td><td><span className={`table-status ${session.status}`}>{session.status}</span></td><td>{session.task === "task4" ? "单次" : `${session.rounds}/10`}</td><td>{session.task === "task4" ? (session.sharedRecap ? "共享1份" : "0") : `${Object.keys(session.recaps || {}).length}/2`}</td><td>{commentCount}</td><td><button className="icon-button"><Icon name="eye" size={16} /></button></td></tr>;
               })}
             </tbody>
           </table>
@@ -109,10 +109,10 @@ export default function HistoryPage({ user, notify }) {
             <button className="button button-secondary" onClick={download}><Icon name="download" size={16} />导出完整JSON</button>
             <button className="button button-danger" onClick={removeSelected} disabled={selectedIsActive} title={selectedIsActive ? "运行中的记录不能删除" : "永久删除此记录"}><Icon name="trash" size={16} />删除记录</button>
           </div>
-          <section className="detail-section"><h3>基本信息</h3><dl><div><dt>状态</dt><dd>{selected.status}</dd></div><div><dt>创建</dt><dd>{formatDate(selected.createdAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(selected.completedAt)}</dd></div><div><dt>回合</dt><dd>{selected.rounds}/10</dd></div></dl>{selected.error && <div className="form-error">{selected.error}</div>}</section>
+          <section className="detail-section"><h3>基本信息</h3><dl><div><dt>状态</dt><dd>{selected.status}</dd></div><div><dt>创建</dt><dd>{formatDate(selected.createdAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(selected.completedAt)}</dd></div><div><dt>{selected.task === "task4" ? "模式" : "回合"}</dt><dd>{selected.task === "task4" ? "单AI直接对齐" : `${selected.rounds}/10`}</dd></div></dl>{selected.error && <div className="form-error">{selected.error}</div>}</section>
           <section className="detail-section"><h3>模型快照</h3><p>Agent 1：{selected.modelSnapshot?.agent1?.model || "—"}</p><p>Agent 2：{selected.modelSnapshot?.agent2?.model || "—"}</p></section>
-          <section className="detail-section"><h3>双方Recap</h3>{Object.entries(selected.recaps || {}).map(([id, recap]) => <div className="detail-recap" key={id}><strong>{id}</strong><span>{recap.status}</span><div>{recap.content || recap.error}</div></div>)}</section>
-          <section className="detail-section"><h3>Transcript与评论</h3><SessionTranscript session={selected} user={user} notify={notify} onMessageUpdated={updateMessage} /></section>
+          <section className="detail-section"><h3>{selected.task === "task4" ? "双方共享Recap" : "双方Recap"}</h3>{selected.task === "task4" && selected.sharedRecap ? <div className="detail-recap"><strong>共享Recap</strong><span>{selected.sharedRecap.status}</span><div>{selected.sharedRecap.content || selected.sharedRecap.error}</div></div> : Object.entries(selected.recaps || {}).map(([id, recap]) => <div className="detail-recap" key={id}><strong>{id}</strong><span>{recap.status}</span><div>{recap.content || recap.error}</div></div>)}</section>
+          {selected.task !== "task4" ? <section className="detail-section"><h3>Transcript与评论</h3><SessionTranscript session={selected} user={user} notify={notify} onMessageUpdated={updateMessage} /></section> : null}
         </aside>
       )}
     </div>

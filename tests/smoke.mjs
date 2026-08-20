@@ -54,6 +54,7 @@ const mock = createServer(async (req, res) => {
     const system = body.messages?.[0]?.content || "";
     receivedSystemPrompts.push(system);
     const isClosureAudit = system.includes("不可见的第二阶段结束审核器");
+    const isTask4 = system.includes("中立的集中式协商助手");
     const isTask2Audit = isClosureAudit && body.messages?.[1]?.content?.includes("新关系介绍代理");
     if (isTask2Audit) task2AuditCalls += 1;
     const recapPayload = body.messages?.[1]?.content?.includes("任务：共享资源分配")
@@ -91,10 +92,24 @@ const mock = createServer(async (req, res) => {
               actions: [{ label: "场地", value: "补充或选择具体展馆与咖啡馆", status: "needs_decision", evidence: "候选方案" }],
             },
           };
+    const task4Payload = {
+      headline: "三个任务的直接对齐建议",
+      summary: "社交计划可形成候选；关系路径与资源条件仍需双方确认。",
+      outcomeStatus: "partial",
+      sections: {
+        task1_alignment: [{ label: "候选计划", value: "周六下午选择安静且地铁可达的展览与咖啡馆组合", status: "proposed", evidence: "双方Profile 1" }],
+        task2_alignment: [{ label: "建议路径", value: "可先探索一次有明确主题的友谊或合作交流", status: "proposed", evidence: "双方Profile 2" }],
+        task3_alignment: [{ label: "临时分配", value: "P1A 5份，P1B 5份，共同保留0份", status: "proposed", evidence: "双方Profile 3" }],
+        cross_task_limits: [{ label: "授权限制", value: "所有具体行动与新增义务仍需双方分别确认", status: "boundary", evidence: "审批要求" }],
+        actions: [{ label: "双方确认", value: "确认三个任务的候选结果是否符合各自边界", status: "needs_decision", evidence: "集中式匹配" }],
+      },
+    };
     const content = isClosureAudit
       ? isTask2Audit && task2AuditCalls <= 2
         ? "CONTINUE: 仍需核对关系目的、互动节奏与可能改变建议的新信息"
         : "READY_TO_CLOSE"
+      : isTask4
+        ? JSON.stringify(task4Payload)
       : system.includes("recap生成器")
         ? JSON.stringify(recapPayload)
         : `我建议选择双方时间与边界均可接受的候选方案。\n${COMPLETION}`;
@@ -249,6 +264,9 @@ try {
   assert.equal(modelResult.modelConfig.tasks.task2.systemPrompt.includes("什么新信息可能改变当前建议"), true);
   assert.equal(modelResult.modelConfig.tasks.task2.recapPrompt.includes("区分关系路径的关键试探"), true);
   assert.equal(modelResult.modelConfig.tasks.task2.recapPrompt.includes("可能改变建议的新信息"), true);
+  assert.equal(modelResult.modelConfig.tasks.task4.enabled, true);
+  assert.equal(modelResult.modelConfig.tasks.task4.systemPrompt.includes("不代表任何一位参与者"), true);
+  assert.equal(modelResult.modelConfig.tasks.task4.recapPrompt.includes("依次覆盖社交计划、新关系介绍和共享资源分配"), true);
   modelResult.modelConfig.agent1 = { baseUrl: `http://127.0.0.1:${mockPort}/v1`, apiKey: "test", model: "mock-model", temperature: 0 };
   modelResult.modelConfig.agent2 = { baseUrl: `http://127.0.0.1:${mockPort}/v1`, apiKey: "test", model: "mock-model", temperature: 0 };
   await request("/api/model-config", { token: admin.token, method: "PUT", body: modelResult });
@@ -459,8 +477,35 @@ try {
   assert.equal(task3Session.profileSchemaSnapshot.fields.some(({ key }) => key === "testCondition"), true);
   assert.equal(receivedSystemPrompts.some((prompt) => prompt.includes("固定的10个共享支持额度") && prompt.includes("实验附加条件") && prompt.includes("仅接受待本人批准的方案")), true);
 
+  const task4Created = await request("/api/sessions", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { participantA: "P1A", participantB: "P1B", task: "task4" },
+  });
+  const task4Session = await waitForSession(task4Created.session.id, admin.token);
+  assert.equal(task4Session.status, "completed", task4Session.error || "Task 4 should complete");
+  assert.equal(task4Session.transcript.length, 0);
+  assert.equal(Object.keys(task4Session.recaps).length, 0);
+  assert.equal(task4Session.sharedRecap.status, "ready");
+  assert.deepEqual(task4Session.sharedRecap.structured.sections.map(({ title }) => title), ["Task 1 · 社交计划", "Task 2 · 新关系介绍", "Task 3 · 资源分配", "跨任务限制与不确定性", "双方需要确认"]);
+  assert.equal(task4Session.termination.reason, "single_assistant_completed");
+  assert.equal(task4Session.profileSnapshot.P1A.task1.interests, "展览与散步");
+  assert.equal(task4Session.profileSnapshot.P1A.task3.testCondition, "仅接受待本人批准的方案");
+  assert.equal(receivedSystemPrompts.some((prompt) => prompt.includes("中立的集中式协商助手") && prompt.includes("不得虚构提议、回应、让步、接受")), true);
+  const participantTask4 = await request(`/api/sessions/${task4Created.session.id}`, { token: p1a.token });
+  assert.equal(participantTask4.session.sharedRecap.status, "ready");
+  assert.deepEqual(Object.keys(participantTask4.session.profileSnapshot), ["P1A"]);
+  const sharedAnnotation = await request(`/api/sessions/${task4Created.session.id}/annotations`, {
+    token: p1a.token,
+    method: "POST",
+    expected: 201,
+    body: { targetType: "recap", targetId: "shared", sectionId: "task1_alignment", quote: "安静且地铁可达", tags: ["important"], note: "需要确认是否符合双方偏好" },
+  });
+  assert.equal(sharedAnnotation.annotation.targetId, "shared");
+
   const history = await request("/api/sessions", { token: admin.token });
-  assert.equal(history.sessions.length, 3);
+  assert.equal(history.sessions.length, 4);
   await request("/api/export/all.zip", { token: p1a.token, expected: 403 });
   const exportResponse = await fetch(`${base}/api/export/all.zip`, {
     headers: { Authorization: `Bearer ${admin.token}` },
@@ -481,8 +526,9 @@ try {
   assert.equal(exportedManifest.apiKeysIncluded, false);
   assert.equal(exportedManifest.rawStoreIncluded, false);
   assert.equal(exportedManifest.includedParticipantCount, 2);
-  assert.equal(exportedManifest.usableSessionCount, 3);
-  assert.equal(exportedManifest.activeAnnotationCount, 2);
+  assert.equal(exportedManifest.usableSessionCount, 4);
+  assert.equal(exportedManifest.conversationSessionCount, 3);
+  assert.equal(exportedManifest.activeAnnotationCount, 3);
   assert.equal(exportedManifest.excludedCancelledAnnotationCount, 1);
   assert.equal(exportedManifest.profileRevisionCount, 1);
   const exportedProfiles = JSON.parse(archiveEntries.get("01_participant_profiles.json"));
@@ -493,8 +539,11 @@ try {
   assert.equal(exportedProfiles[0].revisions[0].revisedProfile.interests, "安静展览与无障碍室内活动");
   assert.equal(exportedProfiles[0].revisions[0].diff.some(({ path }) => path === "studyIntent.desiredUnderstanding"), true);
   const exportedRecaps = JSON.parse(archiveEntries.get("02_participant_recaps_and_annotations.json"));
-  assert.equal(exportedRecaps.length, 3);
+  assert.equal(exportedRecaps.length, 4);
   assert.equal(exportedRecaps[0].participants.find(({ participantId }) => participantId === "P1A").annotations.length, 1);
+  const exportedTask4 = exportedRecaps.find(({ task }) => task === "task4");
+  assert.deepEqual(exportedTask4.participants.map(({ participantId }) => participantId), ["shared"]);
+  assert.equal(exportedTask4.participants[0].annotations.length, 1);
   const exportedConversations = JSON.parse(archiveEntries.get("03_agent_conversations_and_annotations.json"));
   assert.equal(exportedConversations.length, 3);
   const markedMessage = exportedConversations[0].messages.find(({ messageId }) => messageId === "P1B_T1_1");
@@ -515,6 +564,7 @@ try {
   assert.equal(deleted.ok, true);
   await request(`/api/sessions/${task2Created.session.id}`, { token: admin.token, method: "DELETE" });
   await request(`/api/sessions/${task3Created.session.id}`, { token: admin.token, method: "DELETE" });
+  await request(`/api/sessions/${task4Created.session.id}`, { token: admin.token, method: "DELETE" });
   const emptyHistory = await request("/api/sessions", { token: admin.token });
   assert.equal(emptyHistory.sessions.length, 0);
   console.log("Smoke test passed: consent, profiles, sessions, structured recaps, annotations, workflow, cleaned admin ZIP export, history, and deletion.");

@@ -5,8 +5,14 @@ import SessionTranscript from "../components/SessionTranscript.jsx";
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "generating_recaps"]);
 
-function ParticipantSummary({ title, id, profile, schema }) {
-  const entries = (schema?.fields || []).flatMap((field) => {
+function ParticipantSummary({ title, id, profile, schema, combined = false }) {
+  const entries = combined ? ["task1", "task2", "task3"].map((task) => {
+    const answered = (schema?.[task]?.fields || []).filter((field) => {
+      const value = profile?.[task]?.[field.key];
+      return Array.isArray(value) ? value.length : String(value ?? "").trim();
+    }).length;
+    return [schema?.[task]?.title || task, `${answered} 项已填写资料`];
+  }) : (schema?.fields || []).flatMap((field) => {
     const value = profile?.[field.key];
     if (Array.isArray(value) ? !value.length : !String(value ?? "").trim()) return [];
     const displayValue = field.type === "multiselect"
@@ -76,8 +82,9 @@ export default function InteractionPage({ user, notify }) {
   }, [session?.transcript?.length]);
 
   const selectedTask = session?.task || "task1";
-  const taskProfileA = profiles[participantA]?.[selectedTask] || {};
-  const taskProfileB = profiles[participantB]?.[selectedTask] || {};
+  const directAlignment = selectedTask === "task4";
+  const taskProfileA = directAlignment ? profiles[participantA] || {} : profiles[participantA]?.[selectedTask] || {};
+  const taskProfileB = directAlignment ? profiles[participantB] || {} : profiles[participantB]?.[selectedTask] || {};
   const active = session && ACTIVE_STATUSES.has(session.status);
   const statusLabel = useMemo(() => ({ queued: "排队中", running: "代理交互中", generating_recaps: "正在生成Recap", completed: "已完成", completed_with_errors: "完成但Recap有错误", failed: "运行失败" }[session?.status] || "等待开始"), [session?.status]);
 
@@ -107,14 +114,14 @@ export default function InteractionPage({ user, notify }) {
           <select className="select" value={participantA} disabled={active} onChange={(event) => setParticipantA(event.target.value)}>
             <option value="">选择受试者</option>{participants.map((participant) => <option key={participant.id}>{participant.id}</option>)}
           </select>
-          <ParticipantSummary title="左侧代理" id={participantA} profile={taskProfileA} schema={schemas[selectedTask]} />
+          <ParticipantSummary title={directAlignment ? "参与者 A" : "左侧代理"} id={participantA} profile={taskProfileA} schema={directAlignment ? schemas : schemas[selectedTask]} combined={directAlignment} />
         </div>
         <div className="session-status-panel">
           <span className={`status-dot status-${session?.status || "idle"}`} />
           <strong>{statusLabel}</strong>
           <dl>
             <div><dt>记录</dt><dd>{session?.recordName || "—"}</dd></div>
-            <div><dt>回合</dt><dd>{session ? `${session.rounds} / 10` : "—"}</dd></div>
+            <div><dt>{directAlignment ? "模式" : "回合"}</dt><dd>{session ? (directAlignment ? "单AI直接生成" : `${session.rounds} / 10`) : "—"}</dd></div>
             <div><dt>Task</dt><dd>{session ? session.task.replace("task", "Task ") : "—"}</dd></div>
           </dl>
           {session?.error && <div className="form-error">{session.error}</div>}
@@ -124,21 +131,24 @@ export default function InteractionPage({ user, notify }) {
           <select className="select" value={participantB} disabled={active} onChange={(event) => setParticipantB(event.target.value)}>
             <option value="">选择受试者</option>{participants.filter((participant) => participant.id !== participantA).map((participant) => <option key={participant.id}>{participant.id}</option>)}
           </select>
-          <ParticipantSummary title="右侧代理" id={participantB} profile={taskProfileB} schema={schemas[selectedTask]} />
+          <ParticipantSummary title={directAlignment ? "参与者 B" : "右侧代理"} id={participantB} profile={taskProfileB} schema={directAlignment ? schemas : schemas[selectedTask]} combined={directAlignment} />
         </div>
       </div>
 
       <section className="conversation-panel">
-        <div className="panel-heading"><div><h2>实时代理对话</h2><p>每条代理发言独立保存并生成可评论的消息ID。</p></div>{session && <span className="subtle-id">{session.id.slice(0, 8)}</span>}</div>
+        <div className="panel-heading"><div><h2>{directAlignment ? "单AI直接对齐" : "实时代理对话"}</h2><p>{directAlignment ? "协商助手同时读取两人的三个Profile，直接生成共同Recap；不扮演任何一方，也不生成代理对话。" : "每条代理发言独立保存并生成可评论的消息ID。"}</p></div>{session && <span className="subtle-id">{session.id.slice(0, 8)}</span>}</div>
         <div className="conversation-scroll">
-          {session ? <SessionTranscript session={session} user={user} notify={notify} onMessageUpdated={updateMessage} allowComments={false} /> : <div className="empty-state">选择两位已登录的受试者，然后执行一个Task。</div>}
+          {session ? (directAlignment
+            ? <div className="empty-state"><strong>{active ? "正在根据双方资料生成综合Recap…" : "Task 4 不生成Transcript"}</strong><br />完成后请在Recap页面查看三个任务的共同对齐结果。</div>
+            : <SessionTranscript session={session} user={user} notify={notify} onMessageUpdated={updateMessage} allowComments={false} />
+          ) : <div className="empty-state">选择两位已登录的受试者，然后执行一个Task。</div>}
           <div ref={transcriptEnd} />
         </div>
       </section>
 
       <div className="task-controls">
-        <div><strong>任务控制</strong><span>由Agent 1发起；双方独立申请结束并通过私有审核，或达到10回合后生成recap。</span></div>
-        {["task1", "task2", "task3"].map((key, index) => (
+        <div><strong>任务控制</strong><span>Task 1–3运行双代理互动；Task 4由单个中立AI读取双方三个Profile并直接生成共同Recap。</span></div>
+        {["task1", "task2", "task3", "task4"].map((key, index) => (
           <button key={key} className={`button ${key === "task1" ? "button-primary" : "button-secondary"}`} disabled={active || starting || !tasks[key]?.enabled} onClick={() => start(key)}>
             <Icon name="play" size={16} />执行 Task {index + 1}{!tasks[key]?.enabled ? " · 未启用" : ""}
           </button>

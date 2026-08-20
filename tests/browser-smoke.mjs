@@ -198,6 +198,13 @@ try {
   assert.match(await evaluate(client.call, "document.body.innerText"), /admin · 管理员/);
   const adminScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(adminScreenshotPath, Buffer.from(adminScreenshot.data, "base64"));
+  await evaluate(client.call, "[...document.querySelectorAll('.nav-item')].find((item) => item.innerText.trim() === '模型配置').click(); true");
+  await waitFor(() => evaluate(client.call, "[...document.querySelectorAll('.task-tabs button')].some((item) => item.innerText.trim() === 'Task 4')"), "Task 4 model tab did not render");
+  await evaluate(client.call, "[...document.querySelectorAll('.task-tabs button')].find((item) => item.innerText.trim() === 'Task 4').click(); true");
+  assert.equal(await evaluate(client.call, "document.querySelector('.task-editor').innerText.includes('单次生成') && document.querySelector('.task-editor').innerText.includes('双方共享Recap')"), true);
+  assert.equal(await evaluate(client.call, "document.querySelector('.task-editor').innerText.includes('第一阶段结束信号')"), false);
+  await evaluate(client.call, "[...document.querySelectorAll('.nav-item')].find((item) => item.innerText.trim() === '交互').click(); true");
+  await waitFor(() => evaluate(client.call, "[...document.querySelectorAll('.task-controls button')].some((item) => item.innerText.includes('执行 Task 4'))"), "Task 4 interaction control did not render");
   await evaluate(client.call, "[...document.querySelectorAll('button')].find((item) => item.innerText.trim() === 'Profile结构').click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('输入框示例')"), "Admin Profile schema editor did not expose placeholder editing");
   await evaluate(client.call, "[...document.querySelectorAll('.nav-item')].find((item) => item.innerText.trim() === '历史').click(); true");
@@ -208,7 +215,7 @@ try {
     || (event.method === "Log.entryAdded" && ["error", "warning"].includes(event.params?.entry?.level))
   ));
   assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}`);
-  console.log(`Browser smoke passed: participant draft recovery, bottom save, admin cleaned-data ZIP export control, consent, responsive introduction, and profile schema editing. Screenshots: ${screenshotPath}, ${introScreenshotPath}, ${introMobileScreenshotPath}, ${profileScreenshotPath}, ${adminScreenshotPath}`);
+  console.log(`Browser smoke passed: participant draft recovery, bottom save, Task 4 controls, admin cleaned-data ZIP export control, consent, responsive introduction, and profile schema editing. Screenshots: ${screenshotPath}, ${introScreenshotPath}, ${introMobileScreenshotPath}, ${profileScreenshotPath}, ${adminScreenshotPath}`);
 } finally {
   try { await client?.call("Browser.close"); } catch { chrome?.kill(); }
   appProcess?.kill();
