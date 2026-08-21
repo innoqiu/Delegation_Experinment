@@ -503,6 +503,51 @@ try {
     body: { targetType: "recap", targetId: "shared", sectionId: "task1_alignment", quote: "安静且地铁可达", tags: ["important"], note: "需要确认是否符合双方偏好" },
   });
   assert.equal(sharedAnnotation.annotation.targetId, "shared");
+  const p1bBeforeOwnAnnotation = await request(`/api/sessions/${task4Created.session.id}`, { token: p1b.token });
+  assert.equal(p1bBeforeOwnAnnotation.session.annotations.length, 0, "Task 4 annotations must remain private between participants");
+  await request(`/api/sessions/${task4Created.session.id}/annotations`, {
+    token: p1b.token,
+    method: "POST",
+    expected: 201,
+    body: { targetType: "recap", targetId: "shared", sectionId: "task2_alignment", quote: "建议先作为朋友接触", tags: ["unexpected"], note: "我想知道为什么不是合作关系" },
+  });
+  const p1aPrivateTask4 = await request(`/api/sessions/${task4Created.session.id}`, { token: p1a.token });
+  const p1bPrivateTask4 = await request(`/api/sessions/${task4Created.session.id}`, { token: p1b.token });
+  const adminTask4Annotations = await request(`/api/sessions/${task4Created.session.id}`, { token: admin.token });
+  assert.deepEqual(p1aPrivateTask4.session.annotations.map(({ author }) => author), ["P1A"]);
+  assert.deepEqual(p1bPrivateTask4.session.annotations.map(({ author }) => author), ["P1B"]);
+  assert.deepEqual(adminTask4Annotations.session.annotations.map(({ author }) => author).sort(), ["P1A", "P1B"]);
+
+  const questionnaireResponses = {
+    mostVisibleDifference: "双代理保留了来回协商过程，单 AI 更像集中整理。",
+    stanceVisibility: "dual_proxy",
+    boundaryProtection: "depends",
+    disagreementVisibility: "dual_proxy",
+    systemTrust: "uncertain",
+    resultTraceability: "dual_proxy",
+    reentryConfidence: "single_assistant",
+    overallPreference: "dual_proxy",
+    preferenceReason: "我希望看到双方如何逐步形成结果。",
+  };
+  await request(`/api/sessions/${task4Created.session.id}/task4-questionnaire`, {
+    token: p1a.token, method: "POST", expected: 400, body: { responses: { mostVisibleDifference: "尚未填完" } },
+  });
+  const p1aQuestionnaire = await request(`/api/sessions/${task4Created.session.id}/task4-questionnaire`, {
+    token: p1a.token, method: "POST", expected: 201, body: { responses: questionnaireResponses },
+  });
+  assert.equal(p1aQuestionnaire.questionnaire.responses.overallPreference, "dual_proxy");
+  await request(`/api/sessions/${task4Created.session.id}/task4-questionnaire`, {
+    token: p1b.token,
+    method: "POST",
+    expected: 201,
+    body: { responses: { ...questionnaireResponses, mostVisibleDifference: "单 AI 更简洁。", overallPreference: "single_assistant", preferenceReason: "结果更容易快速阅读。" } },
+  });
+  const p1aQuestionnaireView = await request(`/api/sessions/${task4Created.session.id}`, { token: p1a.token });
+  const p1bQuestionnaireView = await request(`/api/sessions/${task4Created.session.id}`, { token: p1b.token });
+  const adminQuestionnaireView = await request(`/api/sessions/${task4Created.session.id}`, { token: admin.token });
+  assert.deepEqual(Object.keys(p1aQuestionnaireView.session.task4Questionnaires), ["P1A"]);
+  assert.deepEqual(Object.keys(p1bQuestionnaireView.session.task4Questionnaires), ["P1B"]);
+  assert.deepEqual(Object.keys(adminQuestionnaireView.session.task4Questionnaires).sort(), ["P1A", "P1B"]);
 
   const history = await request("/api/sessions", { token: admin.token });
   assert.equal(history.sessions.length, 4);
@@ -528,9 +573,10 @@ try {
   assert.equal(exportedManifest.includedParticipantCount, 2);
   assert.equal(exportedManifest.usableSessionCount, 4);
   assert.equal(exportedManifest.conversationSessionCount, 3);
-  assert.equal(exportedManifest.activeAnnotationCount, 3);
+  assert.equal(exportedManifest.activeAnnotationCount, 4);
   assert.equal(exportedManifest.excludedCancelledAnnotationCount, 1);
   assert.equal(exportedManifest.profileRevisionCount, 1);
+  assert.equal(exportedManifest.task4QuestionnaireCount, 2);
   const exportedProfiles = JSON.parse(archiveEntries.get("01_participant_profiles.json"));
   assert.deepEqual(exportedProfiles.map(({ participantId }) => participantId), ["P1A", "P1B"]);
   assert.deepEqual(Object.keys(exportedProfiles[0].profiles), ["task1", "task2", "task3"]);
@@ -542,8 +588,11 @@ try {
   assert.equal(exportedRecaps.length, 4);
   assert.equal(exportedRecaps[0].participants.find(({ participantId }) => participantId === "P1A").annotations.length, 1);
   const exportedTask4 = exportedRecaps.find(({ task }) => task === "task4");
-  assert.deepEqual(exportedTask4.participants.map(({ participantId }) => participantId), ["shared"]);
+  assert.deepEqual(exportedTask4.participants.map(({ participantId }) => participantId), ["P1A", "P1B"]);
   assert.equal(exportedTask4.participants[0].annotations.length, 1);
+  assert.equal(exportedTask4.participants[1].annotations.length, 1);
+  assert.equal(exportedTask4.participants[0].task4Questionnaire.responses.overallPreference, "dual_proxy");
+  assert.equal(exportedTask4.participants[1].task4Questionnaire.responses.overallPreference, "single_assistant");
   const exportedConversations = JSON.parse(archiveEntries.get("03_agent_conversations_and_annotations.json"));
   assert.equal(exportedConversations.length, 3);
   const markedMessage = exportedConversations[0].messages.find(({ messageId }) => messageId === "P1B_T1_1");
@@ -558,6 +607,8 @@ try {
   assert.match(cleanedMarkdown, /第二部分：每位参与者的 Recap 与人工标记/);
   assert.match(cleanedMarkdown, /第三部分：每对 Agent 的交流记录与人工标记/);
   assert.match(cleanedMarkdown, /Agent越权/);
+  assert.match(cleanedMarkdown, /Task 4 对比问卷/);
+  assert.match(cleanedMarkdown, /双代理保留了来回协商过程/);
   assert.equal(archive.includes(Buffer.from('"apiKey": "test"')), false);
   await request(`/api/sessions/${sessionId}`, { token: p1a.token, method: "DELETE", expected: 403 });
   const deleted = await request(`/api/sessions/${sessionId}`, { token: admin.token, method: "DELETE" });

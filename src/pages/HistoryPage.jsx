@@ -5,6 +5,50 @@ import { Icon } from "../components/Icons.jsx";
 
 const formatDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 
+const QUESTION_LABELS = {
+  mostVisibleDifference: "最明显的不同",
+  stanceVisibility: "立场可见性",
+  boundaryProtection: "边界维护",
+  disagreementVisibility: "未解决分歧",
+  systemTrust: "系统信任",
+  resultTraceability: "结果可追溯性",
+  reentryConfidence: "返回现实沟通的信心",
+  overallPreference: "总体偏好",
+  preferenceReason: "偏好原因",
+};
+
+const ANSWER_LABELS = {
+  dual_proxy: "双代理",
+  single_assistant: "单 AI 助手",
+  depends: "取决于任务或情境",
+  uncertain: "不确定",
+};
+
+function Task4ResearchResponses({ session }) {
+  const questionnaires = session.task4Questionnaires || {};
+  const activeAnnotations = (session.annotations || []).filter((annotation) => annotation.targetType === "recap" && !annotation.cancelledAt);
+  return (
+    <section className="detail-section">
+      <h3>Task 4 独立反馈</h3>
+      {[session.participantA, session.participantB].map((participantId) => {
+        const questionnaire = questionnaires[participantId];
+        const annotations = activeAnnotations.filter((annotation) => annotation.author === participantId);
+        return (
+          <div className="admin-task4-response" key={participantId}>
+            <div className="admin-task4-response-head"><strong>{participantId}</strong><span>{questionnaire ? "问卷已提交" : "问卷未提交"} · {annotations.length} 条标记</span></div>
+            {annotations.map((annotation) => <blockquote key={annotation.id}>“{annotation.quote}”{annotation.note ? <small>标记原因：{annotation.note}</small> : null}</blockquote>)}
+            {questionnaire ? (
+              <dl>
+                {Object.entries(QUESTION_LABELS).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{ANSWER_LABELS[questionnaire.responses?.[key]] || questionnaire.responses?.[key] || "—"}</dd></div>)}
+              </dl>
+            ) : <p>该参与者尚未提交对比问卷。</p>}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 export default function HistoryPage({ user, notify }) {
   const [sessions, setSessions] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -112,6 +156,7 @@ export default function HistoryPage({ user, notify }) {
           <section className="detail-section"><h3>基本信息</h3><dl><div><dt>状态</dt><dd>{selected.status}</dd></div><div><dt>创建</dt><dd>{formatDate(selected.createdAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(selected.completedAt)}</dd></div><div><dt>{selected.task === "task4" ? "模式" : "回合"}</dt><dd>{selected.task === "task4" ? "单AI直接对齐" : `${selected.rounds}/10`}</dd></div></dl>{selected.error && <div className="form-error">{selected.error}</div>}</section>
           <section className="detail-section"><h3>模型快照</h3><p>Agent 1：{selected.modelSnapshot?.agent1?.model || "—"}</p><p>Agent 2：{selected.modelSnapshot?.agent2?.model || "—"}</p></section>
           <section className="detail-section"><h3>{selected.task === "task4" ? "双方共享Recap" : "双方Recap"}</h3>{selected.task === "task4" && selected.sharedRecap ? <div className="detail-recap"><strong>共享Recap</strong><span>{selected.sharedRecap.status}</span><div>{selected.sharedRecap.content || selected.sharedRecap.error}</div></div> : Object.entries(selected.recaps || {}).map(([id, recap]) => <div className="detail-recap" key={id}><strong>{id}</strong><span>{recap.status}</span><div>{recap.content || recap.error}</div></div>)}</section>
+          {selected.task === "task4" ? <Task4ResearchResponses session={selected} /> : null}
           {selected.task !== "task4" ? <section className="detail-section"><h3>Transcript与评论</h3><SessionTranscript session={selected} user={user} notify={notify} onMessageUpdated={updateMessage} /></section> : null}
         </aside>
       )}

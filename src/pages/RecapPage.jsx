@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, jsonBody } from "../api.js";
 import SessionTranscript from "../components/SessionTranscript.jsx";
 import TextAnnotation from "../components/TextAnnotation.jsx";
+import Task4ComparisonQuestionnaire from "../components/Task4ComparisonQuestionnaire.jsx";
 import { Icon } from "../components/Icons.jsx";
 import { legacyRecapToStructured } from "../utils/recapMarkdown.jsx";
 
@@ -255,6 +256,17 @@ export default function RecapPage({ user, notify, onNavigate, pageContext }) {
             {selected.task !== "task4" ? <button className="transcript-toggle" onClick={() => setShowTranscript((value) => !value)}>{showTranscript ? "收起完整对话" : "查看完整对话记录"}<Icon name="chevron" size={16} /></button> : null}
             {selected.task !== "task4" && showTranscript ? (
               <section className="recap-transcript" id="recap-transcript"><div className="panel-heading"><div><h2>完整对话记录</h2><p>选中文字后，可以记录内容反应、信任变化或代理越权，并简述原因。</p></div></div><SessionTranscript session={selected} user={user} notify={notify} onMessageUpdated={updateMessage} annotations={selected.annotations || []} onAnnotationSaved={addAnnotation} onAnnotationCancelled={cancelAnnotations} /></section>
+            ) : null}
+            {user.role === "participant" && selected.task === "task4" && selected.sharedRecap?.status === "ready" ? (
+              <Task4ComparisonQuestionnaire
+                session={selected}
+                participantId={user.id}
+                notify={notify}
+                onSaved={(questionnaire) => setSelected((current) => ({
+                  ...current,
+                  task4Questionnaires: { ...(current.task4Questionnaires || {}), [user.id]: questionnaire },
+                }))}
+              />
             ) : null}
             {user.role === "participant" && (selected.task === "task4" ? selected.sharedRecap?.status === "ready" : selected.recaps?.[user.id]?.status === "ready") ? (
               <FollowUpFlow

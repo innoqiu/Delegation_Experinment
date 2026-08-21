@@ -576,6 +576,7 @@ function migrateStore() {
   store.sessions ||= [];
   for (const session of store.sessions) {
     session.annotations ||= [];
+    session.task4Questionnaires ||= {};
     session.configurationRevisions ||= {};
     session.workflow ||= {};
     session.readiness ||= {
@@ -584,8 +585,8 @@ function migrateStore() {
     };
     session.closureAudits ||= [];
   }
-  if (store.version !== 7) {
-    store.version = 7;
+  if (store.version !== 8) {
+    store.version = 8;
     changed = true;
   }
   return changed;
@@ -775,6 +776,25 @@ const CLEAN_EXPORT_DECISION_LABELS = {
   repair_required: "需要修复",
 };
 
+const TASK4_COMPARISON_LABELS = {
+  dual_proxy: "双代理：双方各自拥有代理并进行交互",
+  single_assistant: "单 AI 助手：读取 profile 后进行总结/协调",
+  depends: "取决于任务或情境",
+  uncertain: "不确定",
+};
+
+const TASK4_COMPARISON_QUESTIONS = {
+  mostVisibleDifference: "两种方式最明显的不同是什么？",
+  stanceVisibility: "哪种方式更能让你的立场被看见？",
+  boundaryProtection: "哪种方式更能维护你的重要边界？",
+  disagreementVisibility: "哪种方式更能明显保留双方尚未解决的分歧？",
+  systemTrust: "哪种方式更让你信任系统？",
+  resultTraceability: "哪种方式更容易理解和追溯结果如何形成？",
+  reentryConfidence: "哪种方式让你更有信心返回现实沟通？",
+  overallPreference: "总体偏好",
+  preferenceReason: "偏好原因",
+};
+
 function cleanExportText(value) {
   if (value === null || value === undefined || value === "") return "未填写";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -882,12 +902,19 @@ function buildCleanedDatasets() {
       task: session.task,
       taskLabel: CLEAN_EXPORT_TASK_LABELS[session.task] || session.task,
       status: session.status,
-      participants: (session.task === "task4" ? ["shared"] : [session.participantA, session.participantB]).map((participantId) => ({
+      participants: [session.participantA, session.participantB].map((participantId) => ({
         participantId,
-        recap: cleanExportRecap(participantId === "shared" ? session.sharedRecap : session.recaps?.[participantId]),
+        recap: cleanExportRecap(session.task === "task4" ? session.sharedRecap : session.recaps?.[participantId]),
         annotations: annotations
-          .filter((annotation) => annotation.targetType === "recap" && annotation.targetId === participantId)
+          .filter((annotation) => (
+            annotation.targetType === "recap"
+            && annotation.targetId === (session.task === "task4" ? "shared" : participantId)
+            && (session.task !== "task4" || annotation.author === participantId)
+          ))
           .map(cleanExportAnnotation),
+        task4Questionnaire: session.task === "task4"
+          ? clone(session.task4Questionnaires?.[participantId] || null)
+          : null,
       })),
     };
   });
@@ -936,6 +963,7 @@ function buildCleanedDatasets() {
       messageAnnotationCount: activeAnnotations.filter((annotation) => annotation.targetType === "message").length,
       excludedCancelledAnnotationCount: cancelledAnnotations.length,
       profileRevisionCount: profiles.reduce((sum, participant) => sum + participant.revisions.length, 0),
+      task4QuestionnaireCount: usableSessions.reduce((sum, session) => sum + Object.keys(session.task4Questionnaires || {}).length, 0),
       excludedSessionCount: store.sessions.length - usableSessions.length,
       apiKeysIncluded: false,
       rawStoreIncluded: false,
@@ -1044,7 +1072,7 @@ function buildCleanedMarkdown(datasets) {
       "",
     );
     for (const participant of session.participants) {
-      lines.push(`### ${participant.participantId === "shared" ? "双方共享" : participant.participantId} 的 Recap`, "");
+      lines.push(`### ${participant.participantId} 的 Recap${session.task === "task4" ? "（内容由双方共享；标记相互不可见）" : ""}`, "");
       if (!participant.recap) {
         lines.push("Recap 缺失。", "");
       } else if (participant.recap.content) {
@@ -1057,10 +1085,23 @@ function buildCleanedMarkdown(datasets) {
         if (participant.recap.decision.note) lines.push(`- 说明：${participant.recap.decision.note}`);
         lines.push("");
       }
-      lines.push(`#### ${participant.participantId === "shared" ? "双方对共享 Recap" : `${participant.participantId} 对 Recap`} 的逐条标记`, "");
+      lines.push(`#### ${participant.participantId} 对 Recap 的逐条标记`, "");
       if (!participant.annotations.length) lines.push("- 无有效逐条标记。");
       participant.annotations.forEach((annotation, index) => appendAnnotationMarkdown(lines, annotation, index + 1));
       lines.push("");
+      if (session.task === "task4") {
+        lines.push(`#### ${participant.participantId} 的 Task 4 对比问卷`, "");
+        const questionnaire = participant.task4Questionnaire;
+        if (!questionnaire) {
+          lines.push("- 尚未提交。", "");
+        } else {
+          for (const [key, label] of Object.entries(TASK4_COMPARISON_QUESTIONS)) {
+            const value = questionnaire.responses?.[key];
+            lines.push(`- ${label}：${TASK4_COMPARISON_LABELS[value] || cleanExportText(value)}`);
+          }
+          lines.push(`- 提交时间：${cleanExportText(questionnaire.submittedAt)}`, `- 最近更新：${cleanExportText(questionnaire.updatedAt)}`, "");
+        }
+      }
     }
   }
 
@@ -1307,6 +1348,9 @@ function sessionForAuth(session, auth, detail = false) {
       ? { [auth.id]: copy.configurationRevisions[auth.id] }
       : {};
     copy.workflow = copy.workflow?.[auth.id] ? { [auth.id]: copy.workflow[auth.id] } : {};
+    copy.task4Questionnaires = copy.task4Questionnaires?.[auth.id]
+      ? { [auth.id]: copy.task4Questionnaires[auth.id] }
+      : {};
     delete copy.modelSnapshot;
     delete copy.configSnapshot;
     delete copy.readiness;
@@ -2020,6 +2064,7 @@ async function handleApi(req, res, url) {
       annotations: [],
       configurationRevisions: {},
       workflow: {},
+      task4Questionnaires: {},
       transcript: [],
       recaps: {},
       sharedRecap: null,
@@ -2089,6 +2134,56 @@ async function handleApi(req, res, url) {
     }
     persist();
     return json(res, 200, { message: clone(message) });
+  }
+
+  const task4QuestionnaireMatch = path.match(/^\/api\/sessions\/([^/]+)\/task4-questionnaire$/);
+  if (task4QuestionnaireMatch && req.method === "POST") {
+    const auth = requireAuth(req);
+    if (auth.role !== "participant") throw httpError(403, "只有参与者可以提交自己的问卷");
+    const session = store.sessions.find((item) => item.id === task4QuestionnaireMatch[1]);
+    if (!session || !canAccessSession(auth, session)) throw httpError(404, "记录不存在");
+    if (session.task !== "task4") throw httpError(400, "该问卷仅用于 Task 4");
+    if (session.sharedRecap?.status !== "ready") throw httpError(400, "Task 4 Recap尚未生成");
+
+    const body = await readJson(req);
+    const input = body.responses || {};
+    const comparisonKeys = [
+      "stanceVisibility",
+      "boundaryProtection",
+      "disagreementVisibility",
+      "systemTrust",
+      "resultTraceability",
+      "reentryConfidence",
+    ];
+    const comparisonChoices = new Set(["dual_proxy", "single_assistant", "depends", "uncertain"]);
+    const mostVisibleDifference = String(input.mostVisibleDifference || "").trim().slice(0, 5000);
+    const preferenceReason = String(input.preferenceReason || "").trim().slice(0, 5000);
+    if (!mostVisibleDifference) throw httpError(400, "请填写两种方式最明显的不同");
+    for (const key of comparisonKeys) {
+      if (!comparisonChoices.has(input[key])) throw httpError(400, `请完成：${TASK4_COMPARISON_QUESTIONS[key]}`);
+    }
+    if (!["dual_proxy", "single_assistant"].includes(input.overallPreference)) {
+      throw httpError(400, "请选择总体偏好");
+    }
+    if (!preferenceReason) throw httpError(400, "请简述偏好原因");
+
+    session.task4Questionnaires ||= {};
+    const existing = session.task4Questionnaires[auth.id];
+    const timestamp = now();
+    const questionnaire = {
+      participantId: auth.id,
+      responses: {
+        mostVisibleDifference,
+        ...Object.fromEntries(comparisonKeys.map((key) => [key, input[key]])),
+        overallPreference: input.overallPreference,
+        preferenceReason,
+      },
+      submittedAt: existing?.submittedAt || timestamp,
+      updatedAt: timestamp,
+    };
+    session.task4Questionnaires[auth.id] = questionnaire;
+    persist();
+    return json(res, existing ? 200 : 201, { questionnaire: clone(questionnaire) });
   }
 
   const annotationMatch = path.match(/^\/api\/sessions\/([^/]+)\/annotations$/);
