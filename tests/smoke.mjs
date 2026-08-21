@@ -521,16 +521,23 @@ try {
   const questionnaireResponses = {
     mostVisibleDifference: "双代理保留了来回协商过程，单 AI 更像集中整理。",
     stanceVisibility: "dual_proxy",
+    stanceVisibilityReason: "协商发言能体现我的立场如何被提出。",
     boundaryProtection: "depends",
     disagreementVisibility: "dual_proxy",
+    disagreementVisibilityReason: "双方代理的分歧会保留在往返过程里。",
     systemTrust: "uncertain",
     resultTraceability: "dual_proxy",
+    resultTraceabilityReason: "可以追溯每次提议和回应。",
     reentryConfidence: "single_assistant",
+    reentryConfidenceReason: "集中式结果更容易快速带回真人讨论。",
     overallPreference: "dual_proxy",
     preferenceReason: "我希望看到双方如何逐步形成结果。",
   };
   await request(`/api/sessions/${task4Created.session.id}/task4-questionnaire`, {
     token: p1a.token, method: "POST", expected: 400, body: { responses: { mostVisibleDifference: "尚未填完" } },
+  });
+  await request(`/api/sessions/${task4Created.session.id}/task4-questionnaire`, {
+    token: p1a.token, method: "POST", expected: 400, body: { responses: { ...questionnaireResponses, stanceVisibilityReason: "" } },
   });
   const p1aQuestionnaire = await request(`/api/sessions/${task4Created.session.id}/task4-questionnaire`, {
     token: p1a.token, method: "POST", expected: 201, body: { responses: questionnaireResponses },
@@ -592,6 +599,7 @@ try {
   assert.equal(exportedTask4.participants[0].annotations.length, 1);
   assert.equal(exportedTask4.participants[1].annotations.length, 1);
   assert.equal(exportedTask4.participants[0].task4Questionnaire.responses.overallPreference, "dual_proxy");
+  assert.equal(exportedTask4.participants[0].task4Questionnaire.responses.stanceVisibilityReason, "协商发言能体现我的立场如何被提出。");
   assert.equal(exportedTask4.participants[1].task4Questionnaire.responses.overallPreference, "single_assistant");
   const exportedConversations = JSON.parse(archiveEntries.get("03_agent_conversations_and_annotations.json"));
   assert.equal(exportedConversations.length, 3);

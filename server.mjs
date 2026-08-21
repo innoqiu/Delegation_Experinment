@@ -786,11 +786,17 @@ const TASK4_COMPARISON_LABELS = {
 const TASK4_COMPARISON_QUESTIONS = {
   mostVisibleDifference: "两种方式最明显的不同是什么？",
   stanceVisibility: "哪种方式更能让你的立场被看见？",
+  stanceVisibilityReason: "立场可见性选择原因",
   boundaryProtection: "哪种方式更能维护你的重要边界？",
+  boundaryProtectionReason: "边界维护选择原因",
   disagreementVisibility: "哪种方式更能明显保留双方尚未解决的分歧？",
+  disagreementVisibilityReason: "未解决分歧选择原因",
   systemTrust: "哪种方式更让你信任系统？",
+  systemTrustReason: "系统信任选择原因",
   resultTraceability: "哪种方式更容易理解和追溯结果如何形成？",
+  resultTraceabilityReason: "结果可追溯性选择原因",
   reentryConfidence: "哪种方式让你更有信心返回现实沟通？",
+  reentryConfidenceReason: "返回现实沟通选择原因",
   overallPreference: "总体偏好",
   preferenceReason: "偏好原因",
 };
@@ -2161,6 +2167,9 @@ async function handleApi(req, res, url) {
     if (!mostVisibleDifference) throw httpError(400, "请填写两种方式最明显的不同");
     for (const key of comparisonKeys) {
       if (!comparisonChoices.has(input[key])) throw httpError(400, `请完成：${TASK4_COMPARISON_QUESTIONS[key]}`);
+      if (["dual_proxy", "single_assistant"].includes(input[key]) && !String(input[`${key}Reason`] || "").trim()) {
+        throw httpError(400, `请简述原因：${TASK4_COMPARISON_QUESTIONS[key]}`);
+      }
     }
     if (!["dual_proxy", "single_assistant"].includes(input.overallPreference)) {
       throw httpError(400, "请选择总体偏好");
@@ -2174,7 +2183,10 @@ async function handleApi(req, res, url) {
       participantId: auth.id,
       responses: {
         mostVisibleDifference,
-        ...Object.fromEntries(comparisonKeys.map((key) => [key, input[key]])),
+        ...Object.fromEntries(comparisonKeys.flatMap((key) => [
+          [key, input[key]],
+          [`${key}Reason`, String(input[`${key}Reason`] || "").trim().slice(0, 2000)],
+        ])),
         overallPreference: input.overallPreference,
         preferenceReason,
       },

@@ -20,11 +20,17 @@ const COMPARISON_QUESTIONS = [
 const EMPTY_RESPONSES = {
   mostVisibleDifference: "",
   stanceVisibility: "",
+  stanceVisibilityReason: "",
   boundaryProtection: "",
+  boundaryProtectionReason: "",
   disagreementVisibility: "",
+  disagreementVisibilityReason: "",
   systemTrust: "",
+  systemTrustReason: "",
   resultTraceability: "",
+  resultTraceabilityReason: "",
   reentryConfidence: "",
+  reentryConfidenceReason: "",
   overallPreference: "",
   preferenceReason: "",
 };
@@ -33,7 +39,8 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 }
 
-function ChoiceQuestion({ question, value, onChange }) {
+function ChoiceQuestion({ question, value, reason, onChange }) {
+  const needsReason = value === "dual_proxy" || value === "single_assistant";
   return (
     <fieldset className="task4-choice-question">
       <legend>{question.label}</legend>
@@ -51,6 +58,12 @@ function ChoiceQuestion({ question, value, onChange }) {
           </label>
         ))}
       </div>
+      {needsReason ? (
+        <label className="task4-choice-reason">
+          <span>为什么选择“{value === "dual_proxy" ? "双代理" : "单 AI 助手"}”？</span>
+          <textarea value={reason} onChange={(event) => onChange(`${question.key}Reason`, event.target.value)} placeholder="请简单说明理由（必填）" />
+        </label>
+      ) : null}
     </fieldset>
   );
 }
@@ -66,7 +79,10 @@ export default function Task4ComparisonQuestionnaire({ session, participantId, o
 
   const complete = useMemo(() => (
     responses.mostVisibleDifference.trim()
-    && COMPARISON_QUESTIONS.every(({ key }) => responses[key])
+    && COMPARISON_QUESTIONS.every(({ key }) => (
+      responses[key]
+      && (!["dual_proxy", "single_assistant"].includes(responses[key]) || responses[`${key}Reason`].trim())
+    ))
     && responses.overallPreference
     && responses.preferenceReason.trim()
   ), [responses]);
@@ -111,7 +127,7 @@ export default function Task4ComparisonQuestionnaire({ session, participantId, o
           <textarea value={responses.mostVisibleDifference} onChange={(event) => update("mostVisibleDifference", event.target.value)} placeholder="请结合刚才看到的结果，描述你最直观感受到的差别。" />
         </label>
         <div className="task4-comparison-questions">
-          {COMPARISON_QUESTIONS.map((question) => <ChoiceQuestion question={question} value={responses[question.key]} onChange={update} key={question.key} />)}
+          {COMPARISON_QUESTIONS.map((question) => <ChoiceQuestion question={question} value={responses[question.key]} reason={responses[`${question.key}Reason`]} onChange={update} key={question.key} />)}
         </div>
         <fieldset className="task4-preference-question">
           <legend>总体而言，我更喜欢：</legend>

@@ -8,11 +8,17 @@ const formatDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { 
 const QUESTION_LABELS = {
   mostVisibleDifference: "最明显的不同",
   stanceVisibility: "立场可见性",
+  stanceVisibilityReason: "立场可见性原因",
   boundaryProtection: "边界维护",
+  boundaryProtectionReason: "边界维护原因",
   disagreementVisibility: "未解决分歧",
+  disagreementVisibilityReason: "未解决分歧原因",
   systemTrust: "系统信任",
+  systemTrustReason: "系统信任原因",
   resultTraceability: "结果可追溯性",
+  resultTraceabilityReason: "结果可追溯性原因",
   reentryConfidence: "返回现实沟通的信心",
+  reentryConfidenceReason: "返回现实沟通原因",
   overallPreference: "总体偏好",
   preferenceReason: "偏好原因",
 };

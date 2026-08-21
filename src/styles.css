@@ -414,6 +414,9 @@ p { color: var(--muted); line-height: 1.55; }
 .task4-choice-grid span, .task4-preference-options span { min-width: 0; display: grid; gap: 2px; }
 .task4-choice-grid strong, .task4-preference-options strong { color: #323a47; font-size: 11px; line-height: 1.35; }
 .task4-choice-grid small, .task4-preference-options small { color: var(--faint); font-size: 9px; line-height: 1.4; }
+.task4-choice-reason { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); color: #3d4655; font-size: 11px; font-weight: 650; }
+.task4-choice-reason textarea { width: 100%; min-height: 72px; padding: 8px 9px; border: 1px solid var(--border-strong); border-radius: 5px; resize: vertical; outline: none; color: var(--text); font: 400 11px/1.55 inherit; }
+.task4-choice-reason textarea:focus { border-color: #91a9e6; box-shadow: 0 0 0 3px rgba(76,111,194,.09); }
 .task4-preference-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .task4-questionnaire-actions { display: flex; align-items: center; gap: 11px; padding-top: 3px; }
 .task4-questionnaire-actions small { color: var(--faint); font-size: 10px; }
