@@ -287,6 +287,12 @@ try {
     expected: 201,
     body: { targetType: "message", targetId: "P0B_T1_1", quote: "周六下午", tags: ["unexpected", "agent_overreach"], note: "需要追溯对方代理为何接受" },
   });
+  await api("/api/coding/annotations", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { scheme: "interaction", targetType: "transcript", targetId: `message:${created.session.id}:P0B_T1_1`, quote: "周六下午", codes: ["AA_STRUCTURAL", "RECIPROCAL_UPTAKE", "INSPECT"], note: "检查代理如何共同收敛" },
+  });
   const revisionScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(revisionScreenshotPath, Buffer.from(revisionScreenshot.data, "base64"));
 
@@ -360,6 +366,15 @@ try {
   await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-summary-list article').length === 1"), "Code-filtered summary did not render the matching coding item");
   const codingSummaryScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(codingSummaryScreenshotPath, Buffer.from(codingSummaryScreenshot.data, "base64"));
+  await evaluate(client.call, "document.querySelector('.coding-context-link').click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelector('.coding-annotatable.coding-context-focus')?.innerText.includes('测试修改：代理只能形成候选方案')"), "Profile coding context jump did not locate and highlight its source");
+  assert.equal(await evaluate(client.call, "[...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.classList.contains('active')).innerText.includes('单人 Coding')"), true);
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.innerText.includes('编码汇总'))).click(); true");
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-filter-chips button')].find((node) => node.innerText.includes('RECIPROCAL_UPTAKE'))).click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-summary-list article').length === 1"), "Interaction code filter did not render");
+  await evaluate(client.call, "document.querySelector('.coding-context-link').click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelector('.coding-annotatable.coding-context-focus')?.innerText.includes('周六下午')"), "Transcript coding context jump did not locate and highlight its source");
+  assert.equal(await evaluate(client.call, "[...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.classList.contains('active')).innerText.includes('双人对照 Coding')"), true);
   const relevantErrors = client.events.filter((event) => (
     event.method === "Runtime.exceptionThrown"
     || (event.method === "Runtime.consoleAPICalled" && event.params?.type === "error")

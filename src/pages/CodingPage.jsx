@@ -245,7 +245,7 @@ function originalExport(workspace, category) {
   })));
 }
 
-function CodingSummary({ workspace }) {
+function CodingSummary({ workspace, onOpenContext }) {
   const [selectedCode, setSelectedCode] = useState("ALL");
   const annotations = selectedCode === "ALL"
     ? workspace.codingAnnotations
@@ -295,6 +295,7 @@ function CodingSummary({ workspace }) {
               <blockquote>“{annotation.quote}”</blockquote>
               <div className="coding-summary-codes">{annotation.codes.map((code) => <span title={codingLabel(code)} key={code}>{code}</span>)}</div>
               {annotation.note ? <p>{annotation.note}</p> : null}
+              <button type="button" className="coding-context-link" onClick={() => onOpenContext(annotation)}>查看语境 →</button>
             </article>
           ))}
           {!annotations.length ? <div className="empty-state compact">这个标签下还没有编码内容。</div> : null}
@@ -310,6 +311,7 @@ export default function CodingPage({ notify }) {
   const [participantId, setParticipantId] = useState("");
   const [pairKey, setPairKey] = useState("");
   const [sessionId, setSessionId] = useState("");
+  const [pendingTarget, setPendingTarget] = useState("");
 
   useEffect(() => {
     api("/api/coding/workspace").then(({ workspace: data }) => {
@@ -321,6 +323,24 @@ export default function CodingPage({ notify }) {
   }, []);
 
   const selectedPair = useMemo(() => workspace.pairs.find((pair) => pair.pairKey === pairKey) || workspace.pairs[0], [pairKey, workspace.pairs]);
+
+  useEffect(() => {
+    if (!pendingTarget) return undefined;
+    const timer = window.setTimeout(() => {
+      const element = [...document.querySelectorAll("[data-coding-target]")]
+        .find((node) => node.dataset.codingTarget === pendingTarget);
+      if (!element) {
+        notify("原始语境目前不可用，相关记录可能已被删除", "error");
+        setPendingTarget("");
+        return;
+      }
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      element.classList.add("coding-context-focus");
+      window.setTimeout(() => element.classList.remove("coding-context-focus"), 2600);
+      setPendingTarget("");
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [mode, pairKey, participantId, pendingTarget, sessionId]);
 
   function changePair(nextPairKey) {
     const nextPair = workspace.pairs.find((pair) => pair.pairKey === nextPairKey);
@@ -340,6 +360,42 @@ export default function CodingPage({ notify }) {
     setWorkspace((current) => ({ ...current, pairs: current.pairs.map((pair) => pair.pairKey === savedPairKey ? { ...pair, interview } : pair) }));
   }
 
+  function openContext(annotation) {
+    const parts = annotation.targetId.split(":");
+    if (annotation.targetType === "profile_change" && parts[0] === "profile") {
+      setParticipantId(parts[1]);
+      setMode("individual");
+      setPendingTarget(annotation.targetId);
+      return;
+    }
+    if (annotation.targetType === "task4_response" && parts[0] === "task4") {
+      setParticipantId(parts[2]);
+      setMode("individual");
+      setPendingTarget(annotation.targetId);
+      return;
+    }
+    if (annotation.targetType === "interview" && parts[0] === "interview") {
+      const targetPair = workspace.pairs.find((pair) => pair.pairKey === parts.slice(1).join(":"));
+      if (targetPair) {
+        setPairKey(targetPair.pairKey);
+        setSessionId(targetPair.sessions[0]?.id || "");
+        setMode("pair");
+        setPendingTarget(annotation.targetId);
+        return;
+      }
+    }
+    const targetSessionId = parts[1];
+    const targetPair = workspace.pairs.find((pair) => pair.sessions.some((session) => session.id === targetSessionId));
+    if (targetPair) {
+      setPairKey(targetPair.pairKey);
+      setSessionId(targetSessionId);
+      setMode("pair");
+      setPendingTarget(annotation.targetId);
+      return;
+    }
+    notify("找不到这条编码对应的原始语境", "error");
+  }
+
   return (
     <div className="coding-page">
       <div className="coding-mode-tabs">
@@ -351,7 +407,7 @@ export default function CodingPage({ notify }) {
         <IndividualCoding workspace={workspace} participantId={participantId} onParticipantChange={setParticipantId} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
       ) : mode === "pair" ? (
         <PairCoding workspace={workspace} pairKey={selectedPair?.pairKey || ""} sessionId={sessionId} onPairChange={changePair} onSessionChange={setSessionId} onInterviewSaved={saveInterview} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
-      ) : <CodingSummary workspace={workspace} />}
+      ) : <CodingSummary workspace={workspace} onOpenContext={openContext} />}
     </div>
   );
 }

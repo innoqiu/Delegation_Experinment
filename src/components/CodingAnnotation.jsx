@@ -84,8 +84,8 @@ function highlightedSegments(text, participantAnnotations, codingAnnotations) {
     const covering = ranges.filter((range) => range.start <= start && range.end >= end);
     const value = text.slice(start, end);
     if (!covering.length) return value;
-    const type = covering.some((range) => range.type === "coding") ? "coding" : "participant";
-    return <mark className={`coding-highlight highlight-${type}`} title={covering.map(({ label }) => label).join(" | ")} key={`${start}-${end}`}>{value}</mark>;
+    const types = [...new Set(covering.map((range) => range.type))];
+    return <mark className={`coding-highlight ${types.map((type) => `highlight-${type}`).join(" ")}`} title={covering.map(({ label }) => label).join(" | ")} key={`${start}-${end}`}>{value}</mark>;
   });
 }
 
@@ -183,7 +183,7 @@ export default function CodingAnnotation({
   }
 
   return (
-    <div className="coding-annotatable">
+    <div className="coding-annotatable" data-coding-target={targetId}>
       <div ref={rootRef} className="coding-source-text" onMouseUp={captureSelection} onTouchEnd={captureSelection}>
         {highlightedSegments(String(text || ""), participantAnnotations, codingAnnotations)}
       </div>
