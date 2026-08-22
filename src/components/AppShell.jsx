@@ -8,6 +8,7 @@ const NAV = [
   { id: "interaction", label: "交互", icon: "interaction", admin: true },
   { id: "recaps", label: "Recap", icon: "recaps" },
   { id: "history", label: "历史", icon: "history", admin: true },
+  { id: "coding", label: "定性编码", icon: "coding", admin: true },
 ];
 
 export default function AppShell({ user, page, onPageChange, onLogout, children }) {

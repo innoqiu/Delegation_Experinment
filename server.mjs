@@ -350,7 +350,7 @@ const RECAP_SCHEMAS = {
 
 function initialStore() {
   return {
-    version: 7,
+    version: 9,
     createdAt: new Date().toISOString(),
     participants: createDummyParticipants(),
     profileSchemas: clone(DEFAULT_PROFILE_SCHEMAS),
@@ -393,6 +393,7 @@ function initialStore() {
       },
     },
     sessions: [],
+    qualitativeCoding: { annotations: [], interviews: {} },
   };
 }
 
@@ -585,8 +586,11 @@ function migrateStore() {
     };
     session.closureAudits ||= [];
   }
-  if (store.version !== 8) {
-    store.version = 8;
+  store.qualitativeCoding ||= { annotations: [], interviews: {} };
+  store.qualitativeCoding.annotations ||= [];
+  store.qualitativeCoding.interviews ||= {};
+  if (store.version !== 9) {
+    store.version = 9;
     changed = true;
   }
   return changed;
@@ -801,6 +805,19 @@ const TASK4_COMPARISON_QUESTIONS = {
   preferenceReason: "偏好原因",
 };
 
+const PROFILE_CODING_CODES = new Set([
+  "REPRESENTATION_REGROUNDING",
+  "DELEGATION_REGROUNDING",
+  "MIXED_REGROUNDING",
+  "NO_OR_UNCLEAR_CHANGE",
+]);
+
+const INTERACTION_CODING_GROUPS = {
+  scope: new Set(["AA_STRUCTURAL", "DELEGATION_GENERAL", "IMPLEMENTATION_SPECIFIC", "UNCLEAR"]),
+  mechanism: new Set(["POSITION_ENACTMENT", "RECIPROCAL_UPTAKE", "REPRESENTATION_DRIFT", "STATUS_COLLAPSE", "NONE_OR_UNCLEAR"]),
+  response: new Set(["ENDORSE", "INSPECT", "REGROUND_CONFIRM", "REGROUND_EXPLAIN", "REGROUND_WITHDRAW", "RECONFIGURE_DELEGATION", "NO_STATED_ACTION"]),
+};
+
 function cleanExportText(value) {
   if (value === null || value === undefined || value === "") return "未填写";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -970,6 +987,8 @@ function buildCleanedDatasets() {
       excludedCancelledAnnotationCount: cancelledAnnotations.length,
       profileRevisionCount: profiles.reduce((sum, participant) => sum + participant.revisions.length, 0),
       task4QuestionnaireCount: usableSessions.reduce((sum, session) => sum + Object.keys(session.task4Questionnaires || {}).length, 0),
+      qualitativeCodingAnnotationCount: store.qualitativeCoding.annotations.length,
+      interviewRecordCount: Object.keys(store.qualitativeCoding.interviews).length,
       excludedSessionCount: store.sessions.length - usableSessions.length,
       apiKeysIncluded: false,
       rawStoreIncluded: false,
@@ -978,11 +997,16 @@ function buildCleanedDatasets() {
         "01_participant_profiles.json",
         "02_participant_recaps_and_annotations.json",
         "03_agent_conversations_and_annotations.json",
+        "04_qualitative_coding.json",
       ],
     },
     profiles,
     recaps,
     conversations,
+    qualitativeCoding: {
+      annotations: clone(store.qualitativeCoding.annotations || []),
+      interviews: clone(store.qualitativeCoding.interviews || {}),
+    },
   };
 }
 
@@ -1135,6 +1159,7 @@ function buildCleanedRecordsArchive() {
     jsonEntry("01_participant_profiles.json", datasets.profiles),
     jsonEntry("02_participant_recaps_and_annotations.json", datasets.recaps),
     jsonEntry("03_agent_conversations_and_annotations.json", datasets.conversations),
+    jsonEntry("04_qualitative_coding.json", datasets.qualitativeCoding),
   ]);
 }
 
@@ -1368,6 +1393,99 @@ function sessionForAuth(session, auth, detail = false) {
     if (!detail) delete copy.transcript;
   }
   return copy;
+}
+
+function codingPairKey(participantA, participantB) {
+  return [participantA, participantB].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join("--");
+}
+
+function buildCodingWorkspace() {
+  const participantMap = new Map();
+  const ensureCodingParticipant = (participantId) => {
+    if (!participantMap.has(participantId)) participantMap.set(participantId, { participantId, profileChanges: [], task4Responses: [] });
+    return participantMap.get(participantId);
+  };
+
+  for (const session of store.sessions) {
+    for (const participantId of [session.participantA, session.participantB]) {
+      const participant = ensureCodingParticipant(participantId);
+      for (const revision of session.configurationRevisions?.[participantId] || []) {
+        if (revision.noChanges || !revision.diff?.length) {
+          participant.profileChanges.push({
+            id: `${session.id}:${revision.id}:no-change`,
+            sessionId: session.id,
+            recordName: session.recordName,
+            task: revision.task || session.task,
+            createdAt: revision.createdAt || null,
+            path: "no_change",
+            label: "未记录到实质修改",
+            before: "无变化",
+            after: "无变化",
+          });
+        } else {
+          for (const diff of revision.diff) {
+            participant.profileChanges.push({
+              id: `${session.id}:${revision.id}:${diff.path || diff.label || "change"}`,
+              sessionId: session.id,
+              recordName: session.recordName,
+              task: revision.task || session.task,
+              createdAt: revision.createdAt || null,
+              path: diff.path || "",
+              label: diff.label || diff.path || "配置变化",
+              before: cleanExportText(diff.before),
+              after: cleanExportText(diff.after),
+            });
+          }
+        }
+      }
+      const questionnaire = session.task === "task4" ? session.task4Questionnaires?.[participantId] : null;
+      if (questionnaire) {
+        participant.task4Responses.push({
+          sessionId: session.id,
+          recordName: session.recordName,
+          submittedAt: questionnaire.submittedAt || null,
+          updatedAt: questionnaire.updatedAt || null,
+          responses: clone(questionnaire.responses || {}),
+        });
+      }
+    }
+  }
+
+  const pairMap = new Map();
+  for (const session of store.sessions) {
+    if (!Array.isArray(session.transcript) || !session.transcript.length) continue;
+    const pairKey = codingPairKey(session.participantA, session.participantB);
+    if (!pairMap.has(pairKey)) pairMap.set(pairKey, {
+      pairKey,
+      participantA: [session.participantA, session.participantB].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))[0],
+      participantB: [session.participantA, session.participantB].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))[1],
+      interview: clone(store.qualitativeCoding.interviews?.[pairKey] || null),
+      sessions: [],
+    });
+    pairMap.get(pairKey).sessions.push({
+      id: session.id,
+      recordName: session.recordName,
+      task: session.task,
+      status: session.status,
+      createdAt: session.createdAt,
+      completedAt: session.completedAt,
+      participantA: session.participantA,
+      participantB: session.participantB,
+      recaps: clone(session.recaps || {}),
+      transcript: clone(session.transcript || []),
+      participantAnnotations: clone((session.annotations || []).filter((annotation) => !annotation.cancelledAt)),
+    });
+  }
+
+  return {
+    participants: [...participantMap.values()]
+      .filter((participant) => participant.profileChanges.length || participant.task4Responses.length)
+      .sort((a, b) => a.participantId.localeCompare(b.participantId, undefined, { numeric: true })),
+    pairs: [...pairMap.values()]
+      .map((pair) => ({ ...pair, sessions: pair.sessions.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))) }))
+      .sort((a, b) => a.pairKey.localeCompare(b.pairKey, undefined, { numeric: true })),
+    codingAnnotations: clone(store.qualitativeCoding.annotations || []),
+  };
 }
 
 function cleanBaseUrl(url) {
@@ -1894,6 +2012,71 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && path === "/api/me") {
     return json(res, 200, { user: publicUser(requireAuth(req)) });
+  }
+
+  if (req.method === "GET" && path === "/api/coding/workspace") {
+    requireAuth(req, "admin");
+    return json(res, 200, { workspace: buildCodingWorkspace() });
+  }
+
+  if (req.method === "POST" && path === "/api/coding/annotations") {
+    const auth = requireAuth(req, "admin");
+    const body = await readJson(req);
+    const scheme = String(body.scheme || "");
+    const targetType = String(body.targetType || "").slice(0, 80);
+    const targetId = String(body.targetId || "").slice(0, 500);
+    const quote = String(body.quote || "").trim().slice(0, 5000);
+    const codes = [...new Set(Array.isArray(body.codes) ? body.codes.map(String) : [])];
+    if (!targetType || !targetId || !quote) throw httpError(400, "请选择需要编码的文字");
+    if (scheme === "profile") {
+      if (codes.length !== 1 || !PROFILE_CODING_CODES.has(codes[0])) throw httpError(400, "Profile修改必须选择一个编码类别");
+    } else if (scheme === "interaction") {
+      const validCodes = new Set(Object.values(INTERACTION_CODING_GROUPS).flatMap((group) => [...group]));
+      if (codes.some((code) => !validCodes.has(code))) throw httpError(400, "包含未知编码");
+      for (const [groupName, group] of Object.entries(INTERACTION_CODING_GROUPS)) {
+        if (codes.filter((code) => group.has(code)).length !== 1) throw httpError(400, `请选择一个${groupName}编码`);
+      }
+    } else {
+      throw httpError(400, "未知编码体系");
+    }
+    const annotation = {
+      id: randomUUID(),
+      author: auth.id,
+      scheme,
+      targetType,
+      targetId,
+      quote,
+      start: Math.max(0, Number(body.start || 0)),
+      end: Math.max(0, Number(body.end || 0)),
+      codes,
+      note: String(body.note || "").trim().slice(0, 5000),
+      createdAt: now(),
+    };
+    store.qualitativeCoding.annotations.push(annotation);
+    persist();
+    return json(res, 201, { annotation: clone(annotation) });
+  }
+
+  const codingAnnotationMatch = path.match(/^\/api\/coding\/annotations\/([^/]+)$/);
+  if (codingAnnotationMatch && req.method === "DELETE") {
+    requireAuth(req, "admin");
+    const index = store.qualitativeCoding.annotations.findIndex((annotation) => annotation.id === codingAnnotationMatch[1]);
+    if (index < 0) throw httpError(404, "编码不存在");
+    const [removed] = store.qualitativeCoding.annotations.splice(index, 1);
+    persist();
+    return json(res, 200, { annotation: clone(removed) });
+  }
+
+  const codingInterviewMatch = path.match(/^\/api\/coding\/interviews\/([^/]+)$/);
+  if (codingInterviewMatch && req.method === "PUT") {
+    requireAuth(req, "admin");
+    const pairKey = decodeURIComponent(codingInterviewMatch[1]);
+    const body = await readJson(req);
+    const text = String(body.text || "").trim().slice(0, 100_000);
+    const interview = { pairKey, text, updatedAt: now() };
+    store.qualitativeCoding.interviews[pairKey] = interview;
+    persist();
+    return json(res, 200, { interview: clone(interview) });
   }
 
   if (req.method === "GET" && path === "/api/participants") {

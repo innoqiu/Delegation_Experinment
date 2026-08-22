@@ -556,6 +556,49 @@ try {
   assert.deepEqual(Object.keys(p1bQuestionnaireView.session.task4Questionnaires), ["P1B"]);
   assert.deepEqual(Object.keys(adminQuestionnaireView.session.task4Questionnaires).sort(), ["P1A", "P1B"]);
 
+  await request("/api/coding/workspace", { token: p1a.token, expected: 403 });
+  const codingWorkspace = await request("/api/coding/workspace", { token: admin.token });
+  const p1aCoding = codingWorkspace.workspace.participants.find(({ participantId }) => participantId === "P1A");
+  assert.equal(p1aCoding.profileChanges.some(({ before, after }) => before === "展览与散步" && after === "安静展览与无障碍室内活动"), true);
+  assert.equal(p1aCoding.task4Responses[0].responses.overallPreference, "dual_proxy");
+  assert.equal(codingWorkspace.workspace.pairs.some(({ pairKey }) => pairKey === "P1A--P1B"), true);
+  const profileCoding = await request("/api/coding/annotations", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { scheme: "profile", targetType: "profile_change", targetId: "profile:P1A:test", quote: "修改后：安静展览", codes: ["REPRESENTATION_REGROUNDING"], note: "改变了希望呈现的活动偏好" },
+  });
+  assert.deepEqual(profileCoding.annotation.codes, ["REPRESENTATION_REGROUNDING"]);
+  await request("/api/coding/annotations", {
+    token: admin.token,
+    method: "POST",
+    expected: 400,
+    body: { scheme: "interaction", targetType: "recap", targetId: "recap:test", quote: "候选方案", codes: ["AA_STRUCTURAL"] },
+  });
+  const interactionCoding = await request("/api/coding/annotations", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { scheme: "interaction", targetType: "recap", targetId: `recap:${sessionId}:P1A:candidate`, quote: "候选方案", codes: ["AA_STRUCTURAL", "RECIPROCAL_UPTAKE", "INSPECT"], note: "需要追溯双方如何形成候选" },
+  });
+  assert.equal(interactionCoding.annotation.codes.length, 3);
+  const disposableCoding = await request("/api/coding/annotations", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { scheme: "profile", targetType: "profile_change", targetId: "profile:P1A:delete", quote: "临时编码", codes: ["NO_OR_UNCLEAR_CHANGE"] },
+  });
+  await request(`/api/coding/annotations/${disposableCoding.annotation.id}`, { token: admin.token, method: "DELETE" });
+  const interviewCoding = await request("/api/coding/interviews/P1A--P1B", {
+    token: admin.token,
+    method: "PUT",
+    body: { text: "访谈中，P1A希望先核实候选方案的形成过程，再决定是否接受。" },
+  });
+  assert.match(interviewCoding.interview.text, /核实候选方案/);
+  const codingWorkspaceAfter = await request("/api/coding/workspace", { token: admin.token });
+  assert.equal(codingWorkspaceAfter.workspace.codingAnnotations.length, 2);
+  assert.match(codingWorkspaceAfter.workspace.pairs.find(({ pairKey }) => pairKey === "P1A--P1B").interview.text, /访谈中/);
+
   const history = await request("/api/sessions", { token: admin.token });
   assert.equal(history.sessions.length, 4);
   await request("/api/export/all.zip", { token: p1a.token, expected: 403 });
@@ -573,7 +616,8 @@ try {
   assert.equal(archiveEntries.has("01_participant_profiles.json"), true);
   assert.equal(archiveEntries.has("02_participant_recaps_and_annotations.json"), true);
   assert.equal(archiveEntries.has("03_agent_conversations_and_annotations.json"), true);
-  assert.equal(archiveEntries.size, 5);
+  assert.equal(archiveEntries.has("04_qualitative_coding.json"), true);
+  assert.equal(archiveEntries.size, 6);
   const exportedManifest = JSON.parse(archiveEntries.get("manifest.json"));
   assert.equal(exportedManifest.apiKeysIncluded, false);
   assert.equal(exportedManifest.rawStoreIncluded, false);
@@ -584,6 +628,8 @@ try {
   assert.equal(exportedManifest.excludedCancelledAnnotationCount, 1);
   assert.equal(exportedManifest.profileRevisionCount, 1);
   assert.equal(exportedManifest.task4QuestionnaireCount, 2);
+  assert.equal(exportedManifest.qualitativeCodingAnnotationCount, 2);
+  assert.equal(exportedManifest.interviewRecordCount, 1);
   const exportedProfiles = JSON.parse(archiveEntries.get("01_participant_profiles.json"));
   assert.deepEqual(exportedProfiles.map(({ participantId }) => participantId), ["P1A", "P1B"]);
   assert.deepEqual(Object.keys(exportedProfiles[0].profiles), ["task1", "task2", "task3"]);
@@ -617,6 +663,9 @@ try {
   assert.match(cleanedMarkdown, /Agent越权/);
   assert.match(cleanedMarkdown, /Task 4 对比问卷/);
   assert.match(cleanedMarkdown, /双代理保留了来回协商过程/);
+  const exportedCoding = JSON.parse(archiveEntries.get("04_qualitative_coding.json"));
+  assert.equal(exportedCoding.annotations.length, 2);
+  assert.match(exportedCoding.interviews["P1A--P1B"].text, /核实候选方案/);
   assert.equal(archive.includes(Buffer.from('"apiKey": "test"')), false);
   await request(`/api/sessions/${sessionId}`, { token: p1a.token, method: "DELETE", expected: 403 });
   const deleted = await request(`/api/sessions/${sessionId}`, { token: admin.token, method: "DELETE" });

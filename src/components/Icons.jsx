@@ -7,6 +7,7 @@ export function Icon({ name, size = 20 }) {
     interaction: <><path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></>,
     recaps: <><path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></>,
     history: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2M3 12H1"/></>,
+    coding: <><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5M16 13l2 2-3 3"/></>,
     logout: <><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></>,
     save: <><path d="M5 3h12l2 2v16H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></>,
     play: <path d="m8 5 11 7-11 7z"/>,

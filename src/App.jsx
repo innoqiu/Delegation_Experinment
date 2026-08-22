@@ -9,9 +9,10 @@ import ModelConfigPage from "./pages/ModelConfigPage.jsx";
 import InteractionPage from "./pages/InteractionPage.jsx";
 import RecapPage from "./pages/RecapPage.jsx";
 import HistoryPage from "./pages/HistoryPage.jsx";
+import CodingPage from "./pages/CodingPage.jsx";
 
 const PARTICIPANT_PAGES = ["intro", "profiles", "recaps"];
-const ADMIN_PAGES = ["profiles", "schemas", "models", "interaction", "recaps", "history"];
+const ADMIN_PAGES = ["profiles", "schemas", "models", "interaction", "recaps", "history", "coding"];
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -77,6 +78,7 @@ export default function App() {
     interaction: <InteractionPage {...pageProps} />,
     recaps: <RecapPage {...pageProps} />,
     history: <HistoryPage {...pageProps} />,
+    coding: <CodingPage {...pageProps} />,
   }[page];
 
   return (
