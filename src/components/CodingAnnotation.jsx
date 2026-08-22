@@ -132,11 +132,12 @@ export default function CodingAnnotation({
     const quote = selected.toString().trim();
     if (!quote) return;
     const rect = range.getBoundingClientRect();
+    const maximumTop = Math.max(12, window.innerHeight - 640);
     setSelection({
       quote: quote.slice(0, 5000),
       start: pointOffset(root, range.startContainer, range.startOffset),
       end: pointOffset(root, range.endContainer, range.endOffset),
-      top: Math.min(window.innerHeight - 650, Math.max(12, rect.bottom + 8)),
+      top: Math.min(maximumTop, Math.max(12, rect.bottom + 8)),
       left: Math.min(window.innerWidth - 550, Math.max(12, rect.left)),
     });
     setCodes([]);
@@ -192,9 +193,12 @@ export default function CodingAnnotation({
         <div className="coding-toolbar" style={{ top: selection.top, left: selection.left }} role="dialog" aria-label="添加定性编码">
           <div className="coding-toolbar-head"><strong>编码所选文字</strong><button type="button" onClick={() => setSelection(null)}>×</button></div>
           <blockquote>“{selection.quote}”</blockquote>
-          {groups.map((group) => (
-            <fieldset key={group.id}>
-              <legend>{group.label}</legend>
+          <div className="coding-code-groups">
+          {groups.map((group, index) => {
+            const selectedCode = codes.find((code) => group.codes.some(([value]) => value === code));
+            return (
+            <details className="coding-code-group" open={scheme === "profile" && index === 0} key={group.id}>
+              <summary><strong>{group.label}</strong><span>{selectedCode || "未选择"}</span></summary>
               <div className="coding-code-options">
                 {group.codes.map(([code, description]) => (
                   <button type="button" className={codes.includes(code) ? "selected" : ""} onClick={() => choose(group, code)} key={code} title={description}>
@@ -202,10 +206,13 @@ export default function CodingAnnotation({
                   </button>
                 ))}
               </div>
-            </fieldset>
-          ))}
-          <label><span>编码备注（可选）</span><textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
-          <button type="button" className="button button-primary button-small" onClick={save} disabled={!complete || saving}>{saving ? "保存中…" : "保存编码"}</button>
+            </details>
+          );})}
+          </div>
+          <div className="coding-toolbar-actions">
+            <label><span>编码备注（可选）</span><textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
+            <button type="button" className="button button-primary button-small" onClick={save} disabled={!complete || saving}>{saving ? "保存中…" : "保存编码"}</button>
+          </div>
         </div>
       ) : null}
     </div>

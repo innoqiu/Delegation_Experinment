@@ -558,9 +558,11 @@ try {
 
   await request("/api/coding/workspace", { token: p1a.token, expected: 403 });
   const codingWorkspace = await request("/api/coding/workspace", { token: admin.token });
+  assert.equal(["P0A", "P0B", "P1-HUANYI", "P1A", "P1B", "Q3"].every((id) => codingWorkspace.workspace.participants.some(({ participantId }) => participantId === id)), true);
   const p1aCoding = codingWorkspace.workspace.participants.find(({ participantId }) => participantId === "P1A");
   assert.equal(p1aCoding.profileChanges.some(({ before, after }) => before === "展览与散步" && after === "安静展览与无障碍室内活动"), true);
   assert.equal(p1aCoding.task4Responses[0].responses.overallPreference, "dual_proxy");
+  assert.equal(codingWorkspace.workspace.participantMarks.some(({ task, author, targetId }) => task === "task4" && author === "P1B" && targetId === "shared"), true);
   assert.equal(codingWorkspace.workspace.pairs.some(({ pairKey }) => pairKey === "P1A--P1B"), true);
   const profileCoding = await request("/api/coding/annotations", {
     token: admin.token,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, jsonBody } from "../api.js";
-import CodingAnnotation from "../components/CodingAnnotation.jsx";
+import CodingAnnotation, { codingLabel, INTERACTION_CODE_GROUPS, PROFILE_CODE_GROUPS } from "../components/CodingAnnotation.jsx";
+import { Icon } from "../components/Icons.jsx";
 import { legacyRecapToStructured } from "../utils/recapMarkdown.jsx";
 
 const TASK_LABELS = { task1: "Task 1 · 社交计划", task2: "Task 2 · 新关系介绍", task3: "Task 3 · 资源分配", task4: "Task 4 · 单 AI 对齐" };
@@ -22,6 +23,7 @@ const RESPONSE_LABELS = {
   preferenceReason: "总体偏好原因",
 };
 const CHOICE_LABELS = { dual_proxy: "双代理", single_assistant: "单 AI 助手", depends: "取决于任务或情境", uncertain: "不确定" };
+const ALL_CODE_GROUPS = [...PROFILE_CODE_GROUPS, ...INTERACTION_CODE_GROUPS];
 
 const formatDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 
@@ -176,8 +178,134 @@ function PairCoding({ workspace, pairKey, sessionId, onPairChange, onSessionChan
   );
 }
 
+function downloadJson(filename, value) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function originalExport(workspace, category) {
+  if (category === "profile-changes") {
+    return workspace.participants.flatMap((participant) => participant.profileChanges.map((change) => ({
+      participantId: participant.participantId,
+      recordName: change.recordName,
+      task: change.task,
+      createdAt: change.createdAt,
+      field: change.label,
+      path: change.path,
+      before: change.before,
+      after: change.after,
+    })));
+  }
+  if (category === "participant-marks") {
+    return (workspace.participantMarks || []).map((annotation) => ({
+      pair: [annotation.participantA, annotation.participantB].sort().join("--"),
+      sessionId: annotation.sessionId,
+      recordName: annotation.recordName,
+      task: annotation.task,
+      author: annotation.author,
+      targetType: annotation.targetType,
+      targetId: annotation.targetId,
+      sectionId: annotation.sectionId || "",
+      quote: annotation.quote,
+      tags: annotation.tags || [],
+      reason: annotation.note || "",
+      createdAt: annotation.createdAt || null,
+    }));
+  }
+  if (category === "task4-responses") {
+    return workspace.participants.flatMap((participant) => participant.task4Responses.map((response) => ({
+      participantId: participant.participantId,
+      sessionId: response.sessionId,
+      recordName: response.recordName,
+      submittedAt: response.submittedAt,
+      updatedAt: response.updatedAt,
+      responses: response.responses,
+    })));
+  }
+  return workspace.pairs.flatMap((pair) => pair.sessions.map((session) => ({
+    pair: pair.pairKey,
+    sessionId: session.id,
+    recordName: session.recordName,
+    task: session.task,
+    createdAt: session.createdAt,
+    transcript: session.transcript.map((message) => ({
+      messageId: message.messageId,
+      participantId: message.participantId,
+      round: message.round ?? null,
+      text: message.text,
+      createdAt: message.createdAt || null,
+    })),
+  })));
+}
+
+function CodingSummary({ workspace }) {
+  const [selectedCode, setSelectedCode] = useState("ALL");
+  const annotations = selectedCode === "ALL"
+    ? workspace.codingAnnotations
+    : workspace.codingAnnotations.filter((annotation) => annotation.codes.includes(selectedCode));
+  const exportItems = [
+    ["profile-changes", "Profile 修改"],
+    ["participant-marks", "参与者标记"],
+    ["task4-responses", "Task 4 回复"],
+    ["transcripts", "Transcript"],
+  ];
+
+  function download(category) {
+    const date = new Date().toISOString().slice(0, 10);
+    downloadJson("proxylab-" + category + "-original-" + date + ".json", {
+      exportedAt: new Date().toISOString(),
+      category,
+      note: "仅包含原始研究内容，不包含研究者定性编码。",
+      records: originalExport(workspace, category),
+    });
+  }
+
+  return (
+    <div className="coding-summary-page">
+      <header className="coding-page-header">
+        <div><span>CODE OVERVIEW</span><h1>编码汇总与原文导出</h1></div>
+        <p>按标签查看全部研究编码；导出文件只保留原始材料，不携带研究者 coding 结果。</p>
+      </header>
+      <section className="coding-export-panel">
+        <div><h2>原文分类导出</h2><p>四类材料分别导出为 JSON，便于后续归档或转换。</p></div>
+        <div className="coding-export-actions">
+          {exportItems.map(([category, label]) => <button type="button" className="button button-secondary" onClick={() => download(category)} key={category}><Icon name="download" size={15} />{label}</button>)}
+        </div>
+      </section>
+      <section className="coding-summary-panel">
+        <div className="coding-section-heading"><div><span>01</span><h2>按 Code 查看</h2></div><small>{workspace.codingAnnotations.length} 条研究编码</small></div>
+        <div className="coding-filter-chips">
+          <button type="button" className={selectedCode === "ALL" ? "selected" : ""} onClick={() => setSelectedCode("ALL")}>全部 <span>{workspace.codingAnnotations.length}</span></button>
+          {ALL_CODE_GROUPS.flatMap((group) => group.codes.map(([code]) => {
+            const count = workspace.codingAnnotations.filter((annotation) => annotation.codes.includes(code)).length;
+            return <button type="button" className={selectedCode === code ? "selected" : ""} onClick={() => setSelectedCode(code)} key={code}>{code} <span>{count}</span></button>;
+          }))}
+        </div>
+        <div className="coding-summary-list">
+          {annotations.map((annotation) => (
+            <article key={annotation.id}>
+              <div className="coding-summary-meta"><strong>{annotation.targetType}</strong><span>{annotation.targetId}</span><time>{formatDate(annotation.createdAt)}</time></div>
+              <blockquote>“{annotation.quote}”</blockquote>
+              <div className="coding-summary-codes">{annotation.codes.map((code) => <span title={codingLabel(code)} key={code}>{code}</span>)}</div>
+              {annotation.note ? <p>{annotation.note}</p> : null}
+            </article>
+          ))}
+          {!annotations.length ? <div className="empty-state compact">这个标签下还没有编码内容。</div> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function CodingPage({ notify }) {
-  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], codingAnnotations: [] });
+  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], participantMarks: [], codingAnnotations: [] });
   const [mode, setMode] = useState("individual");
   const [participantId, setParticipantId] = useState("");
   const [pairKey, setPairKey] = useState("");
@@ -217,12 +345,13 @@ export default function CodingPage({ notify }) {
       <div className="coding-mode-tabs">
         <button type="button" className={mode === "individual" ? "active" : ""} onClick={() => setMode("individual")}><strong>单人 Coding</strong><span>Profile changes + Task 4 responses</span></button>
         <button type="button" className={mode === "pair" ? "active" : ""} onClick={() => setMode("pair")}><strong>双人对照 Coding</strong><span>2 Recaps + Transcript + Interview</span></button>
+        <button type="button" className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><strong>编码汇总</strong><span>Filter by code + Original exports</span></button>
       </div>
       {mode === "individual" ? (
         <IndividualCoding workspace={workspace} participantId={participantId} onParticipantChange={setParticipantId} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
-      ) : (
+      ) : mode === "pair" ? (
         <PairCoding workspace={workspace} pairKey={selectedPair?.pairKey || ""} sessionId={sessionId} onPairChange={changePair} onSessionChange={setSessionId} onInterviewSaved={saveInterview} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
-      )}
+      ) : <CodingSummary workspace={workspace} />}
     </div>
   );
 }

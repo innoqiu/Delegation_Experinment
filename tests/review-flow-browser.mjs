@@ -14,6 +14,7 @@ const screenshotPath = join(projectDir, "..", "proxylab-review-flow-qa.png");
 const revisionScreenshotPath = join(projectDir, "..", "proxylab-revision-qa.png");
 const adminRevisionScreenshotPath = join(projectDir, "..", "proxylab-admin-revision-qa.png");
 const codingScreenshotPath = join(projectDir, "..", "proxylab-coding-workspace-qa.png");
+const codingSummaryScreenshotPath = join(projectDir, "..", "proxylab-coding-summary-qa.png");
 const completionPhrase = "我认为任务已完成申请结束";
 let appProcess;
 let chromeProcess;
@@ -310,6 +311,7 @@ try {
   writeFileSync(adminRevisionScreenshotPath, Buffer.from(adminRevisionScreenshot.data, "base64"));
   await evaluate(client.call, `([...document.querySelectorAll('.nav-item')].find((node) => node.innerText.trim() === '定性编码')).click(); true`);
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('Profile changes') && document.body.innerText.includes('测试修改：代理只能形成候选方案')"), "Individual coding workspace did not render profile differences");
+  assert.equal(await evaluate(client.call, "document.querySelectorAll('.coding-index button').length"), 2, "Coding roster must include participants without revisions");
   await evaluate(client.call, `(() => {
     const root = document.querySelector('.coding-source-text');
     const range = document.createRange();
@@ -321,6 +323,8 @@ try {
     return true;
   })()`);
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('REPRESENTATION_REGROUNDING')"), "Profile coding toolbar did not open");
+  assert.equal(await evaluate(client.call, "document.querySelectorAll('.coding-code-group').length"), 1);
+  assert.equal(await evaluate(client.call, "(() => { const rect = document.querySelector('.coding-toolbar .button-primary').getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= window.innerHeight; })()"), true, "Coding save action must remain visible");
   await evaluate(client.call, `([...document.querySelectorAll('.coding-code-options button')].find((node) => node.innerText.includes('REPRESENTATION_REGROUNDING'))).click(); true`);
   await waitFor(() => evaluate(client.call, "!document.querySelector('.coding-toolbar .button-primary').disabled"), "Profile coding save button remained disabled");
   await evaluate(client.call, "document.querySelector('.coding-toolbar .button-primary').click(); true");
@@ -328,6 +332,10 @@ try {
   await evaluate(client.call, `([...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.innerText.includes('双人对照 Coding'))).click(); true`);
   await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-trace-column').length === 3"), "Pair coding comparison did not render three trace columns");
   assert.equal(await evaluate(client.call, "document.querySelectorAll('.highlight-participant').length > 0"), true);
+  await evaluate(client.call, "(() => { const root = document.querySelector('.coding-message .coding-source-text'); const range = document.createRange(); range.selectNodeContents(root); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); return true; })()");
+  await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-code-group').length === 3"), "Interaction coding groups did not render");
+  assert.equal(await evaluate(client.call, "(() => { const groups = [...document.querySelectorAll('.coding-code-group')]; const save = document.querySelector('.coding-toolbar .button-primary').getBoundingClientRect(); return groups.every((group) => !group.open) && save.top >= 0 && save.bottom <= window.innerHeight; })()"), true, "Collapsed coding hierarchy or persistent save action is not visible");
+  await evaluate(client.call, "document.querySelector('.coding-toolbar-head button').click(); true");
   await evaluate(client.call, `(() => {
     const textarea = document.querySelector('.interview-panel textarea');
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
@@ -339,6 +347,19 @@ try {
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('已保存文本 · 可直接编码')"), "Interview material was not saved or made codable");
   const codingScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(codingScreenshotPath, Buffer.from(codingScreenshot.data, "base64"));
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.innerText.includes('编码汇总'))).click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('编码汇总与原文导出') && document.querySelectorAll('.coding-export-actions button').length === 4"), "Coding summary or four original export actions did not render");
+  await evaluate(client.call, "(() => { window.__codingDownloads = []; window.__originalAnchorClick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { fetch(this.href).then((response) => response.text()).then((text) => window.__codingDownloads.push({ filename: this.download, text })); }; [...document.querySelectorAll('.coding-export-actions button')].find((node) => node.innerText.includes('Profile 修改')).click(); return true; })()");
+  await waitFor(() => evaluate(client.call, "window.__codingDownloads.length === 1"), "Original-content export was not generated");
+  const exportedProfileText = await evaluate(client.call, "window.__codingDownloads[0].text");
+  const exportedProfileData = JSON.parse(exportedProfileText);
+  assert.equal(exportedProfileData.category, "profile-changes");
+  assert.equal(exportedProfileData.records.some((record) => record.after.includes("测试修改：代理只能形成候选方案")), true);
+  assert.equal(exportedProfileText.includes("REPRESENTATION_REGROUNDING"), false, "Original export must not include research coding");
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-filter-chips button')].find((node) => node.innerText.includes('REPRESENTATION_REGROUNDING'))).click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-summary-list article').length === 1"), "Code-filtered summary did not render the matching coding item");
+  const codingSummaryScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(codingSummaryScreenshotPath, Buffer.from(codingSummaryScreenshot.data, "base64"));
   const relevantErrors = client.events.filter((event) => (
     event.method === "Runtime.exceptionThrown"
     || (event.method === "Runtime.consoleAPICalled" && event.params?.type === "error")
@@ -347,7 +368,7 @@ try {
   assert.deepEqual(relevantErrors, [], "Browser emitted runtime or console errors");
   client.socket.close();
 
-  console.log(`Review-flow browser test passed. Screenshots: ${screenshotPath}, ${revisionScreenshotPath}, ${adminRevisionScreenshotPath}, ${codingScreenshotPath}`);
+  console.log(`Review-flow browser test passed. Screenshots: ${screenshotPath}, ${revisionScreenshotPath}, ${adminRevisionScreenshotPath}, ${codingScreenshotPath}, ${codingSummaryScreenshotPath}`);
 } finally {
   chromeProcess?.kill();
   appProcess?.kill();

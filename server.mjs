@@ -1406,6 +1406,10 @@ function buildCodingWorkspace() {
     return participantMap.get(participantId);
   };
 
+  // The coding index is a participant roster, not an activity feed. Include
+  // every participant account even when no revision or Task 4 response exists.
+  for (const participantId of Object.keys(store.participants || {})) ensureCodingParticipant(participantId);
+
   for (const session of store.sessions) {
     for (const participantId of [session.participantA, session.participantB]) {
       const participant = ensureCodingParticipant(participantId);
@@ -1479,11 +1483,20 @@ function buildCodingWorkspace() {
 
   return {
     participants: [...participantMap.values()]
-      .filter((participant) => participant.profileChanges.length || participant.task4Responses.length)
       .sort((a, b) => a.participantId.localeCompare(b.participantId, undefined, { numeric: true })),
     pairs: [...pairMap.values()]
       .map((pair) => ({ ...pair, sessions: pair.sessions.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))) }))
       .sort((a, b) => a.pairKey.localeCompare(b.pairKey, undefined, { numeric: true })),
+    participantMarks: store.sessions.flatMap((session) => (session.annotations || [])
+      .filter((annotation) => !annotation.cancelledAt)
+      .map((annotation) => ({
+        sessionId: session.id,
+        recordName: session.recordName,
+        task: session.task,
+        participantA: session.participantA,
+        participantB: session.participantB,
+        ...clone(annotation),
+      }))),
     codingAnnotations: clone(store.qualitativeCoding.annotations || []),
   };
 }
