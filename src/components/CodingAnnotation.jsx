@@ -112,6 +112,7 @@ export default function CodingAnnotation({
   text,
   participantAnnotations = [],
   codingAnnotations = [],
+  showRecords = true,
   onSaved,
   onDeleted,
   notify,
@@ -188,7 +189,7 @@ export default function CodingAnnotation({
         {highlightedSegments(String(text || ""), participantAnnotations, codingAnnotations)}
       </div>
       {participantAnnotations.length ? <div className="participant-mark-summary">参与者标记：{participantAnnotations.map((annotation) => `${annotation.author} · ${(annotation.tags || []).join("/")}`).join("；")}</div> : null}
-      <CodingRecords annotations={codingAnnotations} onDeleted={remove} />
+      {showRecords ? <CodingRecords annotations={codingAnnotations} onDeleted={remove} /> : null}
       {selection ? (
         <div className="coding-toolbar" style={{ top: selection.top, left: selection.left }} role="dialog" aria-label="添加定性编码">
           <div className="coding-toolbar-head"><strong>编码所选文字</strong><button type="button" onClick={() => setSelection(null)}>×</button></div>

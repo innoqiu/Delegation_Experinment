@@ -39,7 +39,7 @@ function recapSectionText(section) {
   ].filter(Boolean).join("\n")).join("\n\n");
 }
 
-function CodingText({ workspace, targetType, targetId, scheme, text, participantAnnotations = [], onAnnotationSaved, onAnnotationDeleted, notify }) {
+function CodingText({ workspace, targetType, targetId, scheme, text, participantAnnotations = [], showRecords = true, onAnnotationSaved, onAnnotationDeleted, notify }) {
   return (
     <CodingAnnotation
       scheme={scheme}
@@ -48,6 +48,7 @@ function CodingText({ workspace, targetType, targetId, scheme, text, participant
       text={text}
       participantAnnotations={participantAnnotations}
       codingAnnotations={annotationTarget(workspace.codingAnnotations, targetId)}
+      showRecords={showRecords}
       onSaved={onAnnotationSaved}
       onDeleted={onAnnotationDeleted}
       notify={notify}
@@ -178,6 +179,122 @@ function PairCoding({ workspace, pairKey, sessionId, onPairChange, onSessionChan
   );
 }
 
+function InterviewTranscriptCoding({ workspace, transcriptId, onTranscriptChange, onTranscriptCreated, onAnnotationSaved, onAnnotationDeleted, notify }) {
+  const transcripts = workspace.uploadedTranscripts || [];
+  const transcript = transcripts.find((item) => item.id === transcriptId) || transcripts[0];
+  const [creating, setCreating] = useState(!transcript);
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [sourceFileName, setSourceFileName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const targetId = transcript ? "uploaded-transcript:" + transcript.id : "";
+  const codedSegments = targetId ? annotationTarget(workspace.codingAnnotations, targetId) : [];
+
+  useEffect(() => {
+    if (transcript) setCreating(false);
+  }, [transcript?.id]);
+
+  async function readFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2_000_000) {
+      notify("采访文件不能超过 2 MB", "error");
+      event.target.value = "";
+      return;
+    }
+    try {
+      setText(await file.text());
+      setSourceFileName(file.name);
+      if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));
+    } catch {
+      notify("无法读取该文件，请改用纯文本文件", "error");
+    }
+  }
+
+  async function createTranscript() {
+    if (!title.trim() || !text.trim()) {
+      notify("请填写名称并上传或粘贴采访原文", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await api("/api/coding/transcripts", {
+        method: "POST",
+        body: jsonBody({ title, text, sourceFileName }),
+      });
+      onTranscriptCreated(result.transcript);
+      onTranscriptChange(result.transcript.id);
+      setCreating(false);
+      setTitle("");
+      setText("");
+      setSourceFileName("");
+      notify("采访 Transcript 已保存");
+    } catch (error) {
+      notify(error.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeCoding(annotationId) {
+    try {
+      await api("/api/coding/annotations/" + annotationId, { method: "DELETE" });
+      onAnnotationDeleted(annotationId);
+      notify("编码已删除");
+    } catch (error) {
+      notify(error.message, "error");
+    }
+  }
+
+  return (
+    <div className="uploaded-transcript-page">
+      <aside className="uploaded-transcript-index">
+        <div className="uploaded-transcript-index-head"><h2>Transcripts</h2><button type="button" onClick={() => setCreating(true)}>＋ 新建</button></div>
+        <div className="uploaded-transcript-list">
+          {transcripts.map((item) => {
+            const count = annotationTarget(workspace.codingAnnotations, "uploaded-transcript:" + item.id).length;
+            return <button type="button" className={!creating && item.id === transcript?.id ? "selected" : ""} onClick={() => { setCreating(false); onTranscriptChange(item.id); }} key={item.id}><strong>{item.title}</strong><span>interview · {count} segments</span></button>;
+          })}
+          {!transcripts.length ? <p>尚未上传采访 Transcript。</p> : null}
+        </div>
+      </aside>
+
+      {creating ? (
+        <section className="uploaded-transcript-create">
+          <div><span>NEW INTERVIEW TRANSCRIPT</span><h1>上传采访原文</h1><p>可选择纯文本文件，或直接将完整采访内容粘贴到下方。</p></div>
+          <label><span>记录名称</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如 Q8Q10 · Re-entry interview" /></label>
+          <label className="transcript-file-picker"><span>选择文本文件</span><input type="file" accept=".txt,.md,.csv,.json,.vtt,.srt,text/plain,text/markdown" onChange={readFile} /><small>{sourceFileName || "支持 TXT、Markdown、CSV、JSON、VTT、SRT；最大 2 MB"}</small></label>
+          <label><span>采访原文</span><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="在这里粘贴采访 Transcript 全文……" /></label>
+          <div className="uploaded-transcript-create-actions">
+            {transcripts.length ? <button type="button" className="button button-secondary" onClick={() => setCreating(false)}>取消</button> : null}
+            <button type="button" className="button button-primary" onClick={createTranscript} disabled={saving}>{saving ? "保存中…" : "保存并开始编码"}</button>
+          </div>
+        </section>
+      ) : transcript ? (
+        <>
+          <main className="uploaded-transcript-document">
+            <header><div><span>INTERVIEW TRANSCRIPT</span><h1>{transcript.title}</h1></div><small>{transcript.sourceFileName || "直接粘贴"} · {formatDate(transcript.createdAt)}</small></header>
+            <CodingText workspace={workspace} scheme="interaction" targetType="interview_transcript" targetId={targetId} text={transcript.text} showRecords={false} onAnnotationSaved={onAnnotationSaved} onAnnotationDeleted={onAnnotationDeleted} notify={notify} />
+          </main>
+          <aside className="uploaded-transcript-segments">
+            <header><h2>Coded segments · {codedSegments.length}</h2></header>
+            <div>
+              {codedSegments.map((annotation) => (
+                <article key={annotation.id}>
+                  <div className="segment-code-head"><strong>{annotation.codes.join(" · ")}</strong><button type="button" onClick={() => removeCoding(annotation.id)} aria-label="删除编码"><Icon name="trash" size={14} /></button></div>
+                  <blockquote>“{annotation.quote}”</blockquote>
+                  {annotation.note ? <p>{annotation.note}</p> : null}
+                </article>
+              ))}
+              {!codedSegments.length ? <p className="uploaded-transcript-empty">选中中间原文即可添加编码。</p> : null}
+            </div>
+          </aside>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function downloadJson(filename, value) {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -229,6 +346,16 @@ function originalExport(workspace, category) {
       responses: response.responses,
     })));
   }
+  if (category === "interview-transcripts") {
+    return (workspace.uploadedTranscripts || []).map((transcript) => ({
+      id: transcript.id,
+      title: transcript.title,
+      sourceFileName: transcript.sourceFileName,
+      text: transcript.text,
+      createdAt: transcript.createdAt,
+      updatedAt: transcript.updatedAt,
+    }));
+  }
   return workspace.pairs.flatMap((pair) => pair.sessions.map((session) => ({
     pair: pair.pairKey,
     sessionId: session.id,
@@ -255,6 +382,7 @@ function CodingSummary({ workspace, onOpenContext }) {
     ["participant-marks", "参与者标记"],
     ["task4-responses", "Task 4 回复"],
     ["transcripts", "Transcript"],
+    ["interview-transcripts", "采访 Transcript"],
   ];
 
   function download(category) {
@@ -306,11 +434,12 @@ function CodingSummary({ workspace, onOpenContext }) {
 }
 
 export default function CodingPage({ notify }) {
-  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], participantMarks: [], codingAnnotations: [] });
+  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], participantMarks: [], uploadedTranscripts: [], codingAnnotations: [] });
   const [mode, setMode] = useState("individual");
   const [participantId, setParticipantId] = useState("");
   const [pairKey, setPairKey] = useState("");
   const [sessionId, setSessionId] = useState("");
+  const [uploadedTranscriptId, setUploadedTranscriptId] = useState("");
   const [pendingTarget, setPendingTarget] = useState("");
 
   useEffect(() => {
@@ -319,6 +448,7 @@ export default function CodingPage({ notify }) {
       setParticipantId((current) => current || data.participants[0]?.participantId || "");
       setPairKey((current) => current || data.pairs[0]?.pairKey || "");
       setSessionId((current) => current || data.pairs[0]?.sessions[0]?.id || "");
+      setUploadedTranscriptId((current) => current || data.uploadedTranscripts?.[0]?.id || "");
     }).catch((error) => notify(error.message, "error"));
   }, []);
 
@@ -340,7 +470,7 @@ export default function CodingPage({ notify }) {
       setPendingTarget("");
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [mode, pairKey, participantId, pendingTarget, sessionId]);
+  }, [mode, pairKey, participantId, pendingTarget, sessionId, uploadedTranscriptId]);
 
   function changePair(nextPairKey) {
     const nextPair = workspace.pairs.find((pair) => pair.pairKey === nextPairKey);
@@ -360,8 +490,21 @@ export default function CodingPage({ notify }) {
     setWorkspace((current) => ({ ...current, pairs: current.pairs.map((pair) => pair.pairKey === savedPairKey ? { ...pair, interview } : pair) }));
   }
 
+  function addUploadedTranscript(transcript) {
+    setWorkspace((current) => ({ ...current, uploadedTranscripts: [transcript, ...(current.uploadedTranscripts || [])] }));
+  }
+
   function openContext(annotation) {
     const parts = annotation.targetId.split(":");
+    if (annotation.targetType === "interview_transcript" && parts[0] === "uploaded-transcript") {
+      const targetTranscript = workspace.uploadedTranscripts?.find((item) => item.id === parts[1]);
+      if (targetTranscript) {
+        setUploadedTranscriptId(targetTranscript.id);
+        setMode("uploaded-transcripts");
+        setPendingTarget(annotation.targetId);
+        return;
+      }
+    }
     if (annotation.targetType === "profile_change" && parts[0] === "profile") {
       setParticipantId(parts[1]);
       setMode("individual");
@@ -401,12 +544,15 @@ export default function CodingPage({ notify }) {
       <div className="coding-mode-tabs">
         <button type="button" className={mode === "individual" ? "active" : ""} onClick={() => setMode("individual")}><strong>单人 Coding</strong><span>Profile changes + Task 4 responses</span></button>
         <button type="button" className={mode === "pair" ? "active" : ""} onClick={() => setMode("pair")}><strong>双人对照 Coding</strong><span>2 Recaps + Transcript + Interview</span></button>
+        <button type="button" className={mode === "uploaded-transcripts" ? "active" : ""} onClick={() => setMode("uploaded-transcripts")}><strong>采访 Transcript</strong><span>Upload + Transcript coding</span></button>
         <button type="button" className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><strong>编码汇总</strong><span>Filter by code + Original exports</span></button>
       </div>
       {mode === "individual" ? (
         <IndividualCoding workspace={workspace} participantId={participantId} onParticipantChange={setParticipantId} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
       ) : mode === "pair" ? (
         <PairCoding workspace={workspace} pairKey={selectedPair?.pairKey || ""} sessionId={sessionId} onPairChange={changePair} onSessionChange={setSessionId} onInterviewSaved={saveInterview} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
+      ) : mode === "uploaded-transcripts" ? (
+        <InterviewTranscriptCoding workspace={workspace} transcriptId={uploadedTranscriptId} onTranscriptChange={setUploadedTranscriptId} onTranscriptCreated={addUploadedTranscript} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
       ) : <CodingSummary workspace={workspace} onOpenContext={openContext} />}
     </div>
   );

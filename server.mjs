@@ -350,7 +350,7 @@ const RECAP_SCHEMAS = {
 
 function initialStore() {
   return {
-    version: 9,
+    version: 10,
     createdAt: new Date().toISOString(),
     participants: createDummyParticipants(),
     profileSchemas: clone(DEFAULT_PROFILE_SCHEMAS),
@@ -393,7 +393,7 @@ function initialStore() {
       },
     },
     sessions: [],
-    qualitativeCoding: { annotations: [], interviews: {} },
+    qualitativeCoding: { annotations: [], interviews: {}, uploadedTranscripts: [] },
   };
 }
 
@@ -586,11 +586,12 @@ function migrateStore() {
     };
     session.closureAudits ||= [];
   }
-  store.qualitativeCoding ||= { annotations: [], interviews: {} };
+  store.qualitativeCoding ||= { annotations: [], interviews: {}, uploadedTranscripts: [] };
   store.qualitativeCoding.annotations ||= [];
   store.qualitativeCoding.interviews ||= {};
-  if (store.version !== 9) {
-    store.version = 9;
+  store.qualitativeCoding.uploadedTranscripts ||= [];
+  if (store.version !== 10) {
+    store.version = 10;
     changed = true;
   }
   return changed;
@@ -989,6 +990,7 @@ function buildCleanedDatasets() {
       task4QuestionnaireCount: usableSessions.reduce((sum, session) => sum + Object.keys(session.task4Questionnaires || {}).length, 0),
       qualitativeCodingAnnotationCount: store.qualitativeCoding.annotations.length,
       interviewRecordCount: Object.keys(store.qualitativeCoding.interviews).length,
+      uploadedInterviewTranscriptCount: store.qualitativeCoding.uploadedTranscripts.length,
       excludedSessionCount: store.sessions.length - usableSessions.length,
       apiKeysIncluded: false,
       rawStoreIncluded: false,
@@ -1006,6 +1008,7 @@ function buildCleanedDatasets() {
     qualitativeCoding: {
       annotations: clone(store.qualitativeCoding.annotations || []),
       interviews: clone(store.qualitativeCoding.interviews || {}),
+      uploadedTranscripts: clone(store.qualitativeCoding.uploadedTranscripts || []),
     },
   };
 }
@@ -1163,12 +1166,12 @@ function buildCleanedRecordsArchive() {
   ]);
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = 1_000_000) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 1_000_000) throw httpError(413, "请求内容过大");
+    if (size > maxBytes) throw httpError(413, "请求内容过大");
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -1497,6 +1500,7 @@ function buildCodingWorkspace() {
         participantB: session.participantB,
         ...clone(annotation),
       }))),
+    uploadedTranscripts: clone(store.qualitativeCoding.uploadedTranscripts || []),
     codingAnnotations: clone(store.qualitativeCoding.annotations || []),
   };
 }
@@ -2030,6 +2034,27 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && path === "/api/coding/workspace") {
     requireAuth(req, "admin");
     return json(res, 200, { workspace: buildCodingWorkspace() });
+  }
+
+  if (req.method === "POST" && path === "/api/coding/transcripts") {
+    const auth = requireAuth(req, "admin");
+    const body = await readJson(req, 2_500_000);
+    const title = String(body.title || "").trim().slice(0, 300);
+    const text = String(body.text || "").trim().slice(0, 2_000_000);
+    if (!title) throw httpError(400, "请填写采访 Transcript 名称");
+    if (!text) throw httpError(400, "请上传或粘贴采访 Transcript 原文");
+    const transcript = {
+      id: randomUUID(),
+      title,
+      text,
+      sourceFileName: String(body.sourceFileName || "").trim().slice(0, 500),
+      uploadedBy: auth.id,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    store.qualitativeCoding.uploadedTranscripts.unshift(transcript);
+    persist();
+    return json(res, 201, { transcript: clone(transcript) });
   }
 
   if (req.method === "POST" && path === "/api/coding/annotations") {

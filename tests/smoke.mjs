@@ -557,6 +557,13 @@ try {
   assert.deepEqual(Object.keys(adminQuestionnaireView.session.task4Questionnaires).sort(), ["P1A", "P1B"]);
 
   await request("/api/coding/workspace", { token: p1a.token, expected: 403 });
+  const uploadedTranscript = await request("/api/coding/transcripts", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { title: "P1A-P1B Re-entry interview", sourceFileName: "interview.txt", text: "研究者：请描述你看到 recap 后最想核实的内容。\nP1A：我想知道候选方案是如何形成的。" },
+  });
+  assert.equal(uploadedTranscript.transcript.sourceFileName, "interview.txt");
   const codingWorkspace = await request("/api/coding/workspace", { token: admin.token });
   assert.equal(["P0A", "P0B", "P1-HUANYI", "P1A", "P1B", "Q3"].every((id) => codingWorkspace.workspace.participants.some(({ participantId }) => participantId === id)), true);
   const p1aCoding = codingWorkspace.workspace.participants.find(({ participantId }) => participantId === "P1A");
@@ -564,6 +571,7 @@ try {
   assert.equal(p1aCoding.task4Responses[0].responses.overallPreference, "dual_proxy");
   assert.equal(codingWorkspace.workspace.participantMarks.some(({ task, author, targetId }) => task === "task4" && author === "P1B" && targetId === "shared"), true);
   assert.equal(codingWorkspace.workspace.pairs.some(({ pairKey }) => pairKey === "P1A--P1B"), true);
+  assert.equal(codingWorkspace.workspace.uploadedTranscripts[0].text.includes("候选方案"), true);
   const profileCoding = await request("/api/coding/annotations", {
     token: admin.token,
     method: "POST",
@@ -632,6 +640,7 @@ try {
   assert.equal(exportedManifest.task4QuestionnaireCount, 2);
   assert.equal(exportedManifest.qualitativeCodingAnnotationCount, 2);
   assert.equal(exportedManifest.interviewRecordCount, 1);
+  assert.equal(exportedManifest.uploadedInterviewTranscriptCount, 1);
   const exportedProfiles = JSON.parse(archiveEntries.get("01_participant_profiles.json"));
   assert.deepEqual(exportedProfiles.map(({ participantId }) => participantId), ["P1A", "P1B"]);
   assert.deepEqual(Object.keys(exportedProfiles[0].profiles), ["task1", "task2", "task3"]);
@@ -668,6 +677,7 @@ try {
   const exportedCoding = JSON.parse(archiveEntries.get("04_qualitative_coding.json"));
   assert.equal(exportedCoding.annotations.length, 2);
   assert.match(exportedCoding.interviews["P1A--P1B"].text, /核实候选方案/);
+  assert.equal(exportedCoding.uploadedTranscripts[0].title, "P1A-P1B Re-entry interview");
   assert.equal(archive.includes(Buffer.from('"apiKey": "test"')), false);
   await request(`/api/sessions/${sessionId}`, { token: p1a.token, method: "DELETE", expected: 403 });
   const deleted = await request(`/api/sessions/${sessionId}`, { token: admin.token, method: "DELETE" });

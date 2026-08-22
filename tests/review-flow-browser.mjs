@@ -15,6 +15,7 @@ const revisionScreenshotPath = join(projectDir, "..", "proxylab-revision-qa.png"
 const adminRevisionScreenshotPath = join(projectDir, "..", "proxylab-admin-revision-qa.png");
 const codingScreenshotPath = join(projectDir, "..", "proxylab-coding-workspace-qa.png");
 const codingSummaryScreenshotPath = join(projectDir, "..", "proxylab-coding-summary-qa.png");
+const uploadedTranscriptScreenshotPath = join(projectDir, "..", "proxylab-uploaded-transcript-qa.png");
 const completionPhrase = "我认为任务已完成申请结束";
 let appProcess;
 let chromeProcess;
@@ -353,8 +354,23 @@ try {
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('已保存文本 · 可直接编码')"), "Interview material was not saved or made codable");
   const codingScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(codingScreenshotPath, Buffer.from(codingScreenshot.data, "base64"));
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.innerText.includes('采访 Transcript'))).click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('上传采访原文') && Boolean(document.querySelector('.uploaded-transcript-create textarea'))"), "Interview Transcript upload view did not render");
+  await evaluate(client.call, "(() => { const input = document.querySelector('.uploaded-transcript-create input:not([type=file])'); const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; inputSetter.call(input, 'P0A-P0B Re-entry interview'); input.dispatchEvent(new Event('input', { bubbles: true })); const textarea = document.querySelector('.uploaded-transcript-create textarea'); const textareaSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; textareaSetter.call(textarea, '研究者：请说说你对代理结果的看法。\\nP0A：我需要澄清代理为何形成周六下午这个候选方案。'); textarea.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await evaluate(client.call, "([...document.querySelectorAll('.uploaded-transcript-create .button-primary')].find((node) => node.innerText.includes('保存并开始编码'))).click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelector('.uploaded-transcript-document h1')?.innerText.includes('P0A-P0B') && document.body.innerText.includes('Coded segments · 0')"), "Uploaded interview Transcript did not render in the three-column workspace");
+  await evaluate(client.call, "(() => { const root = document.querySelector('.uploaded-transcript-document .coding-source-text'); const textNode = root.firstChild; const source = textNode.textContent; const start = source.indexOf('需要澄清'); const range = document.createRange(); range.setStart(textNode, start); range.setEnd(textNode, start + '需要澄清代理为何形成周六下午这个候选方案'.length); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); return true; })()");
+  await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-code-group').length === 3"), "Interview Transcript coding toolbar did not open");
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-code-options button')].find((node) => node.textContent.includes('DELEGATION_GENERAL'))).click(); true");
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-code-options button')].find((node) => node.textContent.includes('POSITION_ENACTMENT'))).click(); true");
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-code-options button')].find((node) => node.textContent.includes('REGROUND_EXPLAIN'))).click(); true");
+  await waitFor(() => evaluate(client.call, "!document.querySelector('.coding-toolbar .button-primary').disabled"), "Interview Transcript coding save button remained disabled");
+  await evaluate(client.call, "document.querySelector('.coding-toolbar .button-primary').click(); true");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('Coded segments · 1') && document.querySelectorAll('.uploaded-transcript-segments article').length === 1"), "Coded interview segment did not appear in the right panel");
+  const uploadedTranscriptScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  writeFileSync(uploadedTranscriptScreenshotPath, Buffer.from(uploadedTranscriptScreenshot.data, "base64"));
   await evaluate(client.call, "([...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.innerText.includes('编码汇总'))).click(); true");
-  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('编码汇总与原文导出') && document.querySelectorAll('.coding-export-actions button').length === 4"), "Coding summary or four original export actions did not render");
+  await waitFor(() => evaluate(client.call, "document.body.innerText.includes('编码汇总与原文导出') && document.querySelectorAll('.coding-export-actions button').length === 5"), "Coding summary or five original export actions did not render");
   await evaluate(client.call, "(() => { window.__codingDownloads = []; window.__originalAnchorClick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { fetch(this.href).then((response) => response.text()).then((text) => window.__codingDownloads.push({ filename: this.download, text })); }; [...document.querySelectorAll('.coding-export-actions button')].find((node) => node.innerText.includes('Profile 修改')).click(); return true; })()");
   await waitFor(() => evaluate(client.call, "window.__codingDownloads.length === 1"), "Original-content export was not generated");
   const exportedProfileText = await evaluate(client.call, "window.__codingDownloads[0].text");
@@ -362,6 +378,13 @@ try {
   assert.equal(exportedProfileData.category, "profile-changes");
   assert.equal(exportedProfileData.records.some((record) => record.after.includes("测试修改：代理只能形成候选方案")), true);
   assert.equal(exportedProfileText.includes("REPRESENTATION_REGROUNDING"), false, "Original export must not include research coding");
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-export-actions button')].find((node) => node.innerText.includes('采访 Transcript'))).click(); true");
+  await waitFor(() => evaluate(client.call, "window.__codingDownloads.length === 2"), "Uploaded interview original-content export was not generated");
+  const exportedInterviewText = await evaluate(client.call, "window.__codingDownloads[1].text");
+  const exportedInterviewData = JSON.parse(exportedInterviewText);
+  assert.equal(exportedInterviewData.category, "interview-transcripts");
+  assert.equal(exportedInterviewData.records[0].text.includes("需要澄清代理为何形成周六下午"), true);
+  assert.equal(exportedInterviewText.includes("POSITION_ENACTMENT"), false, "Uploaded interview original export must not include research coding");
   await evaluate(client.call, "([...document.querySelectorAll('.coding-filter-chips button')].find((node) => node.innerText.includes('REPRESENTATION_REGROUNDING'))).click(); true");
   await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-summary-list article').length === 1"), "Code-filtered summary did not render the matching coding item");
   const codingSummaryScreenshot = await client.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -375,6 +398,12 @@ try {
   await evaluate(client.call, "document.querySelector('.coding-context-link').click(); true");
   await waitFor(() => evaluate(client.call, "document.querySelector('.coding-annotatable.coding-context-focus')?.innerText.includes('周六下午')"), "Transcript coding context jump did not locate and highlight its source");
   assert.equal(await evaluate(client.call, "[...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.classList.contains('active')).innerText.includes('双人对照 Coding')"), true);
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.innerText.includes('编码汇总'))).click(); true");
+  await evaluate(client.call, "([...document.querySelectorAll('.coding-filter-chips button')].find((node) => node.innerText.includes('POSITION_ENACTMENT'))).click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelectorAll('.coding-summary-list article').length === 1"), "Uploaded interview code filter did not render");
+  await evaluate(client.call, "document.querySelector('.coding-context-link').click(); true");
+  await waitFor(() => evaluate(client.call, "document.querySelector('.uploaded-transcript-document .coding-annotatable.coding-context-focus')?.innerText.includes('需要澄清代理为何形成周六下午')"), "Uploaded interview coding context jump did not locate and highlight its source");
+  assert.equal(await evaluate(client.call, "[...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.classList.contains('active')).innerText.includes('采访 Transcript')"), true);
   const relevantErrors = client.events.filter((event) => (
     event.method === "Runtime.exceptionThrown"
     || (event.method === "Runtime.consoleAPICalled" && event.params?.type === "error")
@@ -383,7 +412,7 @@ try {
   assert.deepEqual(relevantErrors, [], "Browser emitted runtime or console errors");
   client.socket.close();
 
-  console.log(`Review-flow browser test passed. Screenshots: ${screenshotPath}, ${revisionScreenshotPath}, ${adminRevisionScreenshotPath}, ${codingScreenshotPath}, ${codingSummaryScreenshotPath}`);
+  console.log(`Review-flow browser test passed. Screenshots: ${screenshotPath}, ${revisionScreenshotPath}, ${adminRevisionScreenshotPath}, ${codingScreenshotPath}, ${codingSummaryScreenshotPath}, ${uploadedTranscriptScreenshotPath}`);
 } finally {
   chromeProcess?.kill();
   appProcess?.kill();
