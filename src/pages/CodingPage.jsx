@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, jsonBody } from "../api.js";
-import CodingAnnotation, { codingLabel, INTERACTION_CODE_GROUPS, PROFILE_CODE_GROUPS } from "../components/CodingAnnotation.jsx";
+import CodingAnnotation, { codeGroupsForScheme, codingLabel } from "../components/CodingAnnotation.jsx";
 import { Icon } from "../components/Icons.jsx";
 import { legacyRecapToStructured } from "../utils/recapMarkdown.jsx";
 
@@ -23,7 +23,12 @@ const RESPONSE_LABELS = {
   preferenceReason: "总体偏好原因",
 };
 const CHOICE_LABELS = { dual_proxy: "双代理", single_assistant: "单 AI 助手", depends: "取决于任务或情境", uncertain: "不确定" };
-const ALL_CODE_GROUPS = [...PROFILE_CODE_GROUPS, ...INTERACTION_CODE_GROUPS];
+const CODE_GROUP_OPTIONS = [
+  ["profile", "Profile 修改类别"],
+  ["scope", "Scope"],
+  ["mechanism", "Mechanism"],
+  ["response", "Response"],
+];
 
 const formatDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 
@@ -48,6 +53,7 @@ function CodingText({ workspace, targetType, targetId, scheme, text, participant
       text={text}
       participantAnnotations={participantAnnotations}
       codingAnnotations={annotationTarget(workspace.codingAnnotations, targetId)}
+      customCodes={workspace.customCodes || []}
       showRecords={showRecords}
       onSaved={onAnnotationSaved}
       onDeleted={onAnnotationDeleted}
@@ -372,8 +378,14 @@ function originalExport(workspace, category) {
   })));
 }
 
-function CodingSummary({ workspace, onOpenContext }) {
+function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, notify }) {
   const [selectedCode, setSelectedCode] = useState("ALL");
+  const [newCode, setNewCode] = useState({ groupId: "scope", code: "", description: "" });
+  const [savingCode, setSavingCode] = useState(false);
+  const allCodeGroups = [
+    ...codeGroupsForScheme("profile", workspace.customCodes),
+    ...codeGroupsForScheme("interaction", workspace.customCodes),
+  ];
   const annotations = selectedCode === "ALL"
     ? workspace.codingAnnotations
     : workspace.codingAnnotations.filter((annotation) => annotation.codes.includes(selectedCode));
@@ -395,6 +407,26 @@ function CodingSummary({ workspace, onOpenContext }) {
     });
   }
 
+  async function addCode(event) {
+    event.preventDefault();
+    if (!newCode.code.trim() || !newCode.description.trim()) return;
+    setSavingCode(true);
+    try {
+      const { customCode } = await api("/api/coding/codes", {
+        method: "POST",
+        body: jsonBody(newCode),
+      });
+      onCustomCodeAdded(customCode);
+      setNewCode((current) => ({ ...current, code: "", description: "" }));
+      setSelectedCode(customCode.code);
+      notify("新编码已添加到 Codebook");
+    } catch (error) {
+      notify(error.message, "error");
+    } finally {
+      setSavingCode(false);
+    }
+  }
+
   return (
     <div className="coding-summary-page">
       <header className="coding-page-header">
@@ -407,11 +439,25 @@ function CodingSummary({ workspace, onOpenContext }) {
           {exportItems.map(([category, label]) => <button type="button" className="button button-secondary" onClick={() => download(category)} key={category}><Icon name="download" size={15} />{label}</button>)}
         </div>
       </section>
+      <section className="coding-codebook-panel">
+        <div>
+          <span>CODEBOOK</span>
+          <h2>添加新编码</h2>
+          <p>选择归属层级后，新编码会立即出现在对应材料的编码工具栏与汇总筛选中。</p>
+        </div>
+        <form onSubmit={addCode}>
+          <label><span>归属类别</span><select value={newCode.groupId} onChange={(event) => setNewCode((current) => ({ ...current, groupId: event.target.value }))}>{CODE_GROUP_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label><span>编码名称</span><input value={newCode.code} onChange={(event) => setNewCode((current) => ({ ...current, code: event.target.value }))} placeholder="例如 AUTHORITY_AMBIGUITY" maxLength={80} /></label>
+          <label className="coding-code-description"><span>简要说明</span><input value={newCode.description} onChange={(event) => setNewCode((current) => ({ ...current, description: event.target.value }))} placeholder="说明该编码适用于什么现象" maxLength={500} /></label>
+          <button type="submit" className="button button-primary" disabled={savingCode || !newCode.code.trim() || !newCode.description.trim()}>{savingCode ? "添加中…" : "添加编码"}</button>
+        </form>
+        {workspace.customCodes?.length ? <div className="coding-custom-code-list">{workspace.customCodes.map((item) => <span title={item.description} key={item.id}>{item.code} · {CODE_GROUP_OPTIONS.find(([value]) => value === item.groupId)?.[1]}</span>)}</div> : null}
+      </section>
       <section className="coding-summary-panel">
         <div className="coding-section-heading"><div><span>01</span><h2>按 Code 查看</h2></div><small>{workspace.codingAnnotations.length} 条研究编码</small></div>
         <div className="coding-filter-chips">
           <button type="button" className={selectedCode === "ALL" ? "selected" : ""} onClick={() => setSelectedCode("ALL")}>全部 <span>{workspace.codingAnnotations.length}</span></button>
-          {ALL_CODE_GROUPS.flatMap((group) => group.codes.map(([code]) => {
+          {allCodeGroups.flatMap((group) => group.codes.map(([code]) => {
             const count = workspace.codingAnnotations.filter((annotation) => annotation.codes.includes(code)).length;
             return <button type="button" className={selectedCode === code ? "selected" : ""} onClick={() => setSelectedCode(code)} key={code}>{code} <span>{count}</span></button>;
           }))}
@@ -421,7 +467,7 @@ function CodingSummary({ workspace, onOpenContext }) {
             <article key={annotation.id}>
               <div className="coding-summary-meta"><strong>{annotation.targetType}</strong><span>{annotation.targetId}</span><time>{formatDate(annotation.createdAt)}</time></div>
               <blockquote>“{annotation.quote}”</blockquote>
-              <div className="coding-summary-codes">{annotation.codes.map((code) => <span title={codingLabel(code)} key={code}>{code}</span>)}</div>
+              <div className="coding-summary-codes">{annotation.codes.map((code) => <span title={codingLabel(code, workspace.customCodes)} key={code}>{code}</span>)}</div>
               {annotation.note ? <p>{annotation.note}</p> : null}
               <button type="button" className="coding-context-link" onClick={() => onOpenContext(annotation)}>查看语境 →</button>
             </article>
@@ -434,7 +480,7 @@ function CodingSummary({ workspace, onOpenContext }) {
 }
 
 export default function CodingPage({ notify }) {
-  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], participantMarks: [], uploadedTranscripts: [], codingAnnotations: [] });
+  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], participantMarks: [], uploadedTranscripts: [], codingAnnotations: [], customCodes: [] });
   const [mode, setMode] = useState("individual");
   const [participantId, setParticipantId] = useState("");
   const [pairKey, setPairKey] = useState("");
@@ -492,6 +538,10 @@ export default function CodingPage({ notify }) {
 
   function addUploadedTranscript(transcript) {
     setWorkspace((current) => ({ ...current, uploadedTranscripts: [transcript, ...(current.uploadedTranscripts || [])] }));
+  }
+
+  function addCustomCode(customCode) {
+    setWorkspace((current) => ({ ...current, customCodes: [...(current.customCodes || []), customCode] }));
   }
 
   function openContext(annotation) {
@@ -553,7 +603,7 @@ export default function CodingPage({ notify }) {
         <PairCoding workspace={workspace} pairKey={selectedPair?.pairKey || ""} sessionId={sessionId} onPairChange={changePair} onSessionChange={setSessionId} onInterviewSaved={saveInterview} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
       ) : mode === "uploaded-transcripts" ? (
         <InterviewTranscriptCoding workspace={workspace} transcriptId={uploadedTranscriptId} onTranscriptChange={setUploadedTranscriptId} onTranscriptCreated={addUploadedTranscript} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
-      ) : <CodingSummary workspace={workspace} onOpenContext={openContext} />}
+      ) : <CodingSummary workspace={workspace} onOpenContext={openContext} onCustomCodeAdded={addCustomCode} notify={notify} />}
     </div>
   );
 }

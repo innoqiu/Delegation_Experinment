@@ -579,12 +579,28 @@ try {
     body: { scheme: "profile", targetType: "profile_change", targetId: "profile:P1A:test", quote: "修改后：安静展览", codes: ["REPRESENTATION_REGROUNDING"], note: "改变了希望呈现的活动偏好" },
   });
   assert.deepEqual(profileCoding.annotation.codes, ["REPRESENTATION_REGROUNDING"]);
-  await request("/api/coding/annotations", {
+  const partialInteractionCoding = await request("/api/coding/annotations", {
     token: admin.token,
     method: "POST",
-    expected: 400,
+    expected: 201,
     body: { scheme: "interaction", targetType: "recap", targetId: "recap:test", quote: "候选方案", codes: ["AA_STRUCTURAL"] },
   });
+  assert.deepEqual(partialInteractionCoding.annotation.codes, ["AA_STRUCTURAL"]);
+  await request(`/api/coding/annotations/${partialInteractionCoding.annotation.id}`, { token: admin.token, method: "DELETE" });
+  const customCodeResult = await request("/api/coding/codes", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { groupId: "mechanism", code: "authority ambiguity", description: "代理权限边界在互动中不明确" },
+  });
+  assert.equal(customCodeResult.customCode.code, "AUTHORITY_AMBIGUITY");
+  const customCoding = await request("/api/coding/annotations", {
+    token: admin.token,
+    method: "POST",
+    expected: 201,
+    body: { scheme: "interaction", targetType: "recap", targetId: "recap:custom", quote: "仍需确认权限", codes: ["AUTHORITY_AMBIGUITY"] },
+  });
+  await request(`/api/coding/annotations/${customCoding.annotation.id}`, { token: admin.token, method: "DELETE" });
   const interactionCoding = await request("/api/coding/annotations", {
     token: admin.token,
     method: "POST",
@@ -607,6 +623,7 @@ try {
   assert.match(interviewCoding.interview.text, /核实候选方案/);
   const codingWorkspaceAfter = await request("/api/coding/workspace", { token: admin.token });
   assert.equal(codingWorkspaceAfter.workspace.codingAnnotations.length, 2);
+  assert.equal(codingWorkspaceAfter.workspace.customCodes[0].code, "AUTHORITY_AMBIGUITY");
   assert.match(codingWorkspaceAfter.workspace.pairs.find(({ pairKey }) => pairKey === "P1A--P1B").interview.text, /访谈中/);
 
   const history = await request("/api/sessions", { token: admin.token });
@@ -676,6 +693,7 @@ try {
   assert.match(cleanedMarkdown, /双代理保留了来回协商过程/);
   const exportedCoding = JSON.parse(archiveEntries.get("04_qualitative_coding.json"));
   assert.equal(exportedCoding.annotations.length, 2);
+  assert.equal(exportedCoding.customCodes[0].code, "AUTHORITY_AMBIGUITY");
   assert.match(exportedCoding.interviews["P1A--P1B"].text, /核实候选方案/);
   assert.equal(exportedCoding.uploadedTranscripts[0].title, "P1A-P1B Re-entry interview");
   assert.equal(archive.includes(Buffer.from('"apiKey": "test"')), false);

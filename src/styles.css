@@ -578,6 +578,16 @@ p { color: var(--muted); line-height: 1.55; }
 .coding-export-panel p { margin: 0; font-size: 10px; }
 .coding-export-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .coding-export-actions .button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.coding-codebook-panel { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 18px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+.coding-codebook-panel > div:first-child > span { color: var(--blue); font: 9px monospace; letter-spacing: .08em; }
+.coding-codebook-panel h2 { margin: 4px 0; font-size: 14px; }
+.coding-codebook-panel p { margin: 0; font-size: 10px; }
+.coding-codebook-panel form { display: grid; grid-template-columns: 155px minmax(190px, .8fr) minmax(250px, 1.3fr) auto; gap: 8px; align-items: end; }
+.coding-codebook-panel label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 650; }
+.coding-codebook-panel input, .coding-codebook-panel select { width: 100%; height: 38px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 5px; background: #fff; font: 10px inherit; }
+.coding-codebook-panel form .button { min-height: 38px; white-space: nowrap; }
+.coding-custom-code-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; padding-top: 10px; border-top: 1px solid var(--border); }
+.coding-custom-code-list span { padding: 4px 7px; border-radius: 999px; color: #6846a5; background: #f4efff; font: 8px monospace; }
 .coding-summary-panel { border: 1px solid var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
 .coding-filter-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--border); background: #fff; }
 .coding-filter-chips button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); background: #fff; font: 8px monospace; cursor: pointer; }
@@ -618,6 +628,12 @@ p { color: var(--muted); line-height: 1.55; }
 .transcript-file-picker small { color: var(--faint); font-weight: 400; }
 .uploaded-transcript-create textarea { min-height: 360px; padding: 13px; border: 1px solid var(--border-strong); border-radius: 5px; resize: vertical; font: inherit; font-size: 12px; line-height: 1.7; }
 .uploaded-transcript-create-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 1100px) {
+  .coding-codebook-panel { grid-template-columns: 1fr; }
+  .coding-codebook-panel form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .coding-codebook-panel form .button { align-self: end; }
+}
 .uploaded-transcript-document { min-width: 0; max-height: calc(100vh - 170px); overflow: auto; padding: 0 26px 40px; border-right: 1px solid var(--border); }
 .uploaded-transcript-document > header { position: sticky; z-index: 3; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 -26px 18px; padding: 13px 26px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.96); }
 .uploaded-transcript-document header small { color: var(--faint); font-size: 8px; text-align: right; }

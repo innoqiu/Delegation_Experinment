@@ -393,7 +393,7 @@ function initialStore() {
       },
     },
     sessions: [],
-    qualitativeCoding: { annotations: [], interviews: {}, uploadedTranscripts: [] },
+    qualitativeCoding: { annotations: [], interviews: {}, uploadedTranscripts: [], customCodes: [] },
   };
 }
 
@@ -586,10 +586,11 @@ function migrateStore() {
     };
     session.closureAudits ||= [];
   }
-  store.qualitativeCoding ||= { annotations: [], interviews: {}, uploadedTranscripts: [] };
+  store.qualitativeCoding ||= { annotations: [], interviews: {}, uploadedTranscripts: [], customCodes: [] };
   store.qualitativeCoding.annotations ||= [];
   store.qualitativeCoding.interviews ||= {};
   store.qualitativeCoding.uploadedTranscripts ||= [];
+  store.qualitativeCoding.customCodes ||= [];
   if (store.version !== 10) {
     store.version = 10;
     changed = true;
@@ -819,6 +820,23 @@ const INTERACTION_CODING_GROUPS = {
   response: new Set(["ENDORSE", "INSPECT", "REGROUND_CONFIRM", "REGROUND_EXPLAIN", "REGROUND_WITHDRAW", "RECONFIGURE_DELEGATION", "NO_STATED_ACTION"]),
 };
 
+const CODING_GROUP_SCHEMES = {
+  profile: "profile",
+  scope: "interaction",
+  mechanism: "interaction",
+  response: "interaction",
+};
+
+function validCodingCodes(scheme) {
+  const builtIn = scheme === "profile"
+    ? [...PROFILE_CODING_CODES]
+    : Object.values(INTERACTION_CODING_GROUPS).flatMap((group) => [...group]);
+  const custom = (store.qualitativeCoding?.customCodes || [])
+    .filter((item) => item.scheme === scheme)
+    .map((item) => item.code);
+  return new Set([...builtIn, ...custom]);
+}
+
 function cleanExportText(value) {
   if (value === null || value === undefined || value === "") return "未填写";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -989,6 +1007,7 @@ function buildCleanedDatasets() {
       profileRevisionCount: profiles.reduce((sum, participant) => sum + participant.revisions.length, 0),
       task4QuestionnaireCount: usableSessions.reduce((sum, session) => sum + Object.keys(session.task4Questionnaires || {}).length, 0),
       qualitativeCodingAnnotationCount: store.qualitativeCoding.annotations.length,
+      customCodingCodeCount: store.qualitativeCoding.customCodes.length,
       interviewRecordCount: Object.keys(store.qualitativeCoding.interviews).length,
       uploadedInterviewTranscriptCount: store.qualitativeCoding.uploadedTranscripts.length,
       excludedSessionCount: store.sessions.length - usableSessions.length,
@@ -1009,6 +1028,7 @@ function buildCleanedDatasets() {
       annotations: clone(store.qualitativeCoding.annotations || []),
       interviews: clone(store.qualitativeCoding.interviews || {}),
       uploadedTranscripts: clone(store.qualitativeCoding.uploadedTranscripts || []),
+      customCodes: clone(store.qualitativeCoding.customCodes || []),
     },
   };
 }
@@ -1502,6 +1522,7 @@ function buildCodingWorkspace() {
       }))),
     uploadedTranscripts: clone(store.qualitativeCoding.uploadedTranscripts || []),
     codingAnnotations: clone(store.qualitativeCoding.annotations || []),
+    customCodes: clone(store.qualitativeCoding.customCodes || []),
   };
 }
 
@@ -2057,6 +2078,36 @@ async function handleApi(req, res, url) {
     return json(res, 201, { transcript: clone(transcript) });
   }
 
+  if (req.method === "POST" && path === "/api/coding/codes") {
+    const auth = requireAuth(req, "admin");
+    const body = await readJson(req);
+    const groupId = String(body.groupId || "").trim().toLowerCase();
+    const scheme = CODING_GROUP_SCHEMES[groupId];
+    const code = String(body.code || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+    const description = String(body.description || "").trim().slice(0, 500);
+    if (!scheme) throw httpError(400, "请选择编码所属类别");
+    if (!/^[A-Z][A-Z0-9_]{1,79}$/.test(code)) throw httpError(400, "编码名称需为2–80位大写字母、数字或下划线，并以字母开头");
+    if (!description) throw httpError(400, "请填写编码说明");
+    const allKnownCodes = new Set([
+      ...PROFILE_CODING_CODES,
+      ...Object.values(INTERACTION_CODING_GROUPS).flatMap((group) => [...group]),
+      ...(store.qualitativeCoding.customCodes || []).map((item) => item.code),
+    ]);
+    if (allKnownCodes.has(code)) throw httpError(409, "该编码名称已存在");
+    const customCode = {
+      id: randomUUID(),
+      code,
+      description,
+      groupId,
+      scheme,
+      createdBy: auth.id,
+      createdAt: now(),
+    };
+    store.qualitativeCoding.customCodes.push(customCode);
+    persist();
+    return json(res, 201, { customCode: clone(customCode) });
+  }
+
   if (req.method === "POST" && path === "/api/coding/annotations") {
     const auth = requireAuth(req, "admin");
     const body = await readJson(req);
@@ -2066,17 +2117,13 @@ async function handleApi(req, res, url) {
     const quote = String(body.quote || "").trim().slice(0, 5000);
     const codes = [...new Set(Array.isArray(body.codes) ? body.codes.map(String) : [])];
     if (!targetType || !targetId || !quote) throw httpError(400, "请选择需要编码的文字");
-    if (scheme === "profile") {
-      if (codes.length !== 1 || !PROFILE_CODING_CODES.has(codes[0])) throw httpError(400, "Profile修改必须选择一个编码类别");
-    } else if (scheme === "interaction") {
-      const validCodes = new Set(Object.values(INTERACTION_CODING_GROUPS).flatMap((group) => [...group]));
-      if (codes.some((code) => !validCodes.has(code))) throw httpError(400, "包含未知编码");
-      for (const [groupName, group] of Object.entries(INTERACTION_CODING_GROUPS)) {
-        if (codes.filter((code) => group.has(code)).length !== 1) throw httpError(400, `请选择一个${groupName}编码`);
-      }
-    } else {
+    if (!codes.length) throw httpError(400, "请至少选择一个编码");
+    if (codes.length > 50) throw httpError(400, "单段文字最多保存50个编码");
+    if (scheme !== "profile" && scheme !== "interaction") {
       throw httpError(400, "未知编码体系");
     }
+    const validCodes = validCodingCodes(scheme);
+    if (codes.some((code) => !validCodes.has(code))) throw httpError(400, "包含未知编码或编码不属于当前材料类型");
     const annotation = {
       id: randomUUID(),
       author: auth.id,

@@ -51,6 +51,19 @@ export const INTERACTION_CODE_GROUPS = [
 
 const CODE_LABELS = Object.fromEntries([...PROFILE_CODE_GROUPS, ...INTERACTION_CODE_GROUPS].flatMap((group) => group.codes));
 
+export function codeGroupsForScheme(scheme, customCodes = []) {
+  const baseGroups = scheme === "profile" ? PROFILE_CODE_GROUPS : INTERACTION_CODE_GROUPS;
+  return baseGroups.map((group) => ({
+    ...group,
+    codes: [
+      ...group.codes,
+      ...customCodes
+        .filter((item) => item.scheme === scheme && item.groupId === group.id)
+        .map((item) => [item.code, item.description]),
+    ],
+  }));
+}
+
 function pointOffset(root, node, offset) {
   const range = document.createRange();
   range.selectNodeContents(root);
@@ -112,6 +125,7 @@ export default function CodingAnnotation({
   text,
   participantAnnotations = [],
   codingAnnotations = [],
+  customCodes = [],
   showRecords = true,
   onSaved,
   onDeleted,
@@ -122,7 +136,7 @@ export default function CodingAnnotation({
   const [codes, setCodes] = useState([]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
-  const groups = scheme === "profile" ? PROFILE_CODE_GROUPS : INTERACTION_CODE_GROUPS;
+  const groups = codeGroupsForScheme(scheme, customCodes);
 
   function captureSelection() {
     const selected = window.getSelection();
@@ -145,14 +159,13 @@ export default function CodingAnnotation({
     setNote("");
   }
 
-  function choose(group, code) {
-    const groupCodes = new Set(group.codes.map(([value]) => value));
-    setCodes((current) => [...current.filter((value) => !groupCodes.has(value)), code]);
+  function choose(code) {
+    setCodes((current) => current.includes(code)
+      ? current.filter((value) => value !== code)
+      : [...current, code]);
   }
 
-  const complete = scheme === "profile"
-    ? codes.length === 1
-    : groups.every((group) => codes.some((code) => group.codes.some(([value]) => value === code)));
+  const complete = codes.length > 0;
 
   async function save() {
     if (!selection || !complete) return;
@@ -196,13 +209,13 @@ export default function CodingAnnotation({
           <blockquote>“{selection.quote}”</blockquote>
           <div className="coding-code-groups">
           {groups.map((group, index) => {
-            const selectedCode = codes.find((code) => group.codes.some(([value]) => value === code));
+            const selectedCodes = codes.filter((code) => group.codes.some(([value]) => value === code));
             return (
             <details className="coding-code-group" open={scheme === "profile" && index === 0} key={group.id}>
-              <summary><strong>{group.label}</strong><span>{selectedCode || "未选择"}</span></summary>
+              <summary><strong>{group.label}</strong><span>{selectedCodes.length ? selectedCodes.join(" · ") : "未选择"}</span></summary>
               <div className="coding-code-options">
                 {group.codes.map(([code, description]) => (
-                  <button type="button" className={codes.includes(code) ? "selected" : ""} onClick={() => choose(group, code)} key={code} title={description}>
+                  <button type="button" className={codes.includes(code) ? "selected" : ""} onClick={() => choose(code)} key={code} title={description}>
                     <strong>{code}</strong><small>{description}</small>
                   </button>
                 ))}
@@ -211,7 +224,7 @@ export default function CodingAnnotation({
           );})}
           </div>
           <div className="coding-toolbar-actions">
-            <label><span>编码备注（可选）</span><textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
+            <label><span>编码备注（可选）· 至少选1个，可跨组或同组多选</span><textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
             <button type="button" className="button button-primary button-small" onClick={save} disabled={!complete || saving}>{saving ? "保存中…" : "保存编码"}</button>
           </div>
         </div>
@@ -220,6 +233,6 @@ export default function CodingAnnotation({
   );
 }
 
-export function codingLabel(code) {
-  return CODE_LABELS[code] || code;
+export function codingLabel(code, customCodes = []) {
+  return CODE_LABELS[code] || customCodes.find((item) => item.code === code)?.description || code;
 }
