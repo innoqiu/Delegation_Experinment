@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOST = process.env.HOST || "0.0.0.0";
@@ -393,7 +393,7 @@ function initialStore() {
       },
     },
     sessions: [],
-    qualitativeCoding: { annotations: [], interviews: {}, uploadedTranscripts: [], customCodes: [] },
+    qualitativeCoding: { annotations: [], interviews: {}, uploadedTranscripts: [], customCodes: [], imports: [] },
   };
 }
 
@@ -586,11 +586,12 @@ function migrateStore() {
     };
     session.closureAudits ||= [];
   }
-  store.qualitativeCoding ||= { annotations: [], interviews: {}, uploadedTranscripts: [], customCodes: [] };
+  store.qualitativeCoding ||= { annotations: [], interviews: {}, uploadedTranscripts: [], customCodes: [], imports: [] };
   store.qualitativeCoding.annotations ||= [];
   store.qualitativeCoding.interviews ||= {};
   store.qualitativeCoding.uploadedTranscripts ||= [];
   store.qualitativeCoding.customCodes ||= [];
+  store.qualitativeCoding.imports ||= [];
   if (store.version !== 10) {
     store.version = 10;
     changed = true;
@@ -827,6 +828,65 @@ const CODING_GROUP_SCHEMES = {
   response: "interaction",
 };
 
+const CODING_GROUP_LABELS = {
+  profile: "Profile 修改类别",
+  scope: "Scope",
+  mechanism: "Mechanism",
+  response: "Response",
+};
+
+const BUILT_IN_CODING_DESCRIPTIONS = {
+  REPRESENTATION_REGROUNDING: "修改代理如何理解和呈现用户",
+  DELEGATION_REGROUNDING: "修改代理可以替用户做什么",
+  MIXED_REGROUNDING: "同时改变用户表征与代理权限",
+  NO_OR_UNCLEAR_CHANGE: "没有实质修改或意义不明确",
+  AA_STRUCTURAL: "依赖双方分别由代理代表的 A–A 结构",
+  DELEGATION_GENERAL: "来自 AI 代表用户，单边代理也可能发生",
+  IMPLEMENTATION_SPECIFIC: "主要由任务、prompt、模板或模型实现造成",
+  UNCLEAR: "现有材料不足以判断",
+  POSITION_ENACTMENT: "代理表达、解释、维护或限定己方立场",
+  RECIPROCAL_UPTAKE: "两个代理共同发展或固化 joint state",
+  REPRESENTATION_DRIFT: "对方信息改变了代理对己方用户的表述",
+  STATUS_COLLAPSE: "候选、接受与承诺等状态区别被消除",
+  NONE_OR_UNCLEAR: "未识别出明确互动机制",
+  ENDORSE: "用户认可、认领或愿意保留",
+  INSPECT: "需要查看记录或形成过程后判断",
+  REGROUND_CONFIRM: "需要本人或对方重新确认",
+  REGROUND_EXPLAIN: "需要补充条件、纠正或修复印象",
+  REGROUND_WITHDRAW: "拒绝、撤回或重新打开结果",
+  RECONFIGURE_DELEGATION: "希望修改 profile、权限或未来规则",
+  NO_STATED_ACTION: "进行了标记但未说明后续行动",
+};
+
+const AI_CODING_IMPORT_SCHEMA = "proxylab-ai-coding-import/v1";
+
+function codingCodebook(customCodes = store.qualitativeCoding?.customCodes || []) {
+  const builtInGroups = {
+    profile: [...PROFILE_CODING_CODES],
+    ...Object.fromEntries(Object.entries(INTERACTION_CODING_GROUPS).map(([groupId, codes]) => [groupId, [...codes]])),
+  };
+  const builtIn = Object.entries(builtInGroups).flatMap(([groupId, codes]) => codes.map((code) => ({
+    code,
+    description: BUILT_IN_CODING_DESCRIPTIONS[code] || "",
+    groupId,
+    groupLabel: CODING_GROUP_LABELS[groupId],
+    scheme: CODING_GROUP_SCHEMES[groupId],
+    source: "built_in",
+  })));
+  return [...builtIn, ...customCodes.map((item) => ({
+    code: item.code,
+    description: item.description,
+    groupId: item.groupId,
+    groupLabel: CODING_GROUP_LABELS[item.groupId],
+    scheme: item.scheme,
+    source: "custom",
+  }))];
+}
+
+function sha256Text(value) {
+  return createHash("sha256").update(String(value), "utf8").digest("hex");
+}
+
 function validCodingCodes(scheme) {
   const builtIn = scheme === "profile"
     ? [...PROFILE_CODING_CODES]
@@ -891,6 +951,7 @@ function cleanExportRecap(recap) {
 }
 
 function buildCleanedDatasets() {
+  const exportedAt = now();
   const usableSessions = store.sessions.filter((session) => (
     ["completed", "completed_with_errors"].includes(session.status)
     && (
@@ -993,9 +1054,10 @@ function buildCleanedDatasets() {
     };
   });
 
+  const codingRoundtrip = buildCodingRoundtripDocument(exportedAt);
   return {
     manifest: {
-      exportedAt: now(),
+      exportedAt,
       source: "server DATA_DIR/store.json",
       includedParticipantCount: profiles.length,
       usableSessionCount: usableSessions.length,
@@ -1008,6 +1070,9 @@ function buildCleanedDatasets() {
       task4QuestionnaireCount: usableSessions.reduce((sum, session) => sum + Object.keys(session.task4Questionnaires || {}).length, 0),
       qualitativeCodingAnnotationCount: store.qualitativeCoding.annotations.length,
       customCodingCodeCount: store.qualitativeCoding.customCodes.length,
+      aiCodingImportCount: store.qualitativeCoding.imports.length,
+      codingTargetCount: codingRoundtrip.targets.length,
+      codingRoundtripSchemaVersion: AI_CODING_IMPORT_SCHEMA,
       interviewRecordCount: Object.keys(store.qualitativeCoding.interviews).length,
       uploadedInterviewTranscriptCount: store.qualitativeCoding.uploadedTranscripts.length,
       excludedSessionCount: store.sessions.length - usableSessions.length,
@@ -1019,6 +1084,8 @@ function buildCleanedDatasets() {
         "02_participant_recaps_and_annotations.json",
         "03_agent_conversations_and_annotations.json",
         "04_qualitative_coding.json",
+        "05_ai_coding_roundtrip.json",
+        "AI_CODING_IMPORT_GUIDE.md",
       ],
     },
     profiles,
@@ -1029,7 +1096,9 @@ function buildCleanedDatasets() {
       interviews: clone(store.qualitativeCoding.interviews || {}),
       uploadedTranscripts: clone(store.qualitativeCoding.uploadedTranscripts || []),
       customCodes: clone(store.qualitativeCoding.customCodes || []),
+      imports: clone(store.qualitativeCoding.imports || []),
     },
+    codingRoundtrip,
   };
 }
 
@@ -1183,6 +1252,8 @@ function buildCleanedRecordsArchive() {
     jsonEntry("02_participant_recaps_and_annotations.json", datasets.recaps),
     jsonEntry("03_agent_conversations_and_annotations.json", datasets.conversations),
     jsonEntry("04_qualitative_coding.json", datasets.qualitativeCoding),
+    jsonEntry("05_ai_coding_roundtrip.json", datasets.codingRoundtrip),
+    { name: "AI_CODING_IMPORT_GUIDE.md", data: buildAiCodingImportGuide(datasets.codingRoundtrip) },
   ]);
 }
 
@@ -1523,6 +1594,341 @@ function buildCodingWorkspace() {
     uploadedTranscripts: clone(store.qualitativeCoding.uploadedTranscripts || []),
     codingAnnotations: clone(store.qualitativeCoding.annotations || []),
     customCodes: clone(store.qualitativeCoding.customCodes || []),
+    codingImports: clone(store.qualitativeCoding.imports || []),
+  };
+}
+
+function recapSectionCodingText(section = {}) {
+  if (!Array.isArray(section.items) || !section.items.length) return "无额外事项";
+  return section.items.map((item) => [
+    item.label ? `${item.label}：${item.value}` : item.value,
+    item.evidence ? `来源：${item.evidence}` : "",
+  ].filter(Boolean).join("\n")).join("\n\n");
+}
+
+function buildCodingTargetCatalog() {
+  const workspace = buildCodingWorkspace();
+  const targets = [];
+  const addTarget = ({ targetId, targetType, scheme, text, context }) => {
+    const normalizedText = String(text || "");
+    if (!targetId || !normalizedText) return;
+    targets.push({
+      targetId,
+      targetType,
+      scheme,
+      text: normalizedText,
+      contentHash: sha256Text(normalizedText),
+      context,
+    });
+  };
+  const task4ChoiceLabels = {
+    dual_proxy: "双代理",
+    single_assistant: "单 AI 助手",
+    depends: "取决于任务或情境",
+    uncertain: "不确定",
+  };
+
+  for (const participant of workspace.participants) {
+    for (const change of participant.profileChanges) {
+      addTarget({
+        targetId: `profile:${participant.participantId}:${change.id}`,
+        targetType: "profile_change",
+        scheme: "profile",
+        text: `${change.label}\n修改前：${change.before}\n修改后：${change.after}`,
+        context: { participantId: participant.participantId, sessionId: change.sessionId, recordName: change.recordName, task: change.task, fieldPath: change.path },
+      });
+    }
+    for (const response of participant.task4Responses) {
+      for (const [key, value] of Object.entries(response.responses || {})) {
+        addTarget({
+          targetId: `task4:${response.sessionId}:${participant.participantId}:${key}`,
+          targetType: "task4_response",
+          scheme: "interaction",
+          text: task4ChoiceLabels[value] || String(value || "未填写"),
+          context: { participantId: participant.participantId, sessionId: response.sessionId, recordName: response.recordName, task: "task4", questionKey: key, question: TASK4_COMPARISON_QUESTIONS[key] || key },
+        });
+      }
+    }
+  }
+
+  for (const pair of workspace.pairs) {
+    for (const session of pair.sessions) {
+      for (const participantId of [session.participantA, session.participantB]) {
+        const recap = session.recaps?.[participantId];
+        for (const section of recap?.structured?.sections || []) {
+          addTarget({
+            targetId: `recap:${session.id}:${participantId}:${section.id}`,
+            targetType: "recap",
+            scheme: "interaction",
+            text: recapSectionCodingText(section),
+            context: { pairKey: pair.pairKey, participantId, sessionId: session.id, recordName: session.recordName, task: session.task, sectionId: section.id, sectionTitle: section.title },
+          });
+        }
+      }
+      for (const message of session.transcript || []) {
+        addTarget({
+          targetId: `message:${session.id}:${message.messageId}`,
+          targetType: "transcript",
+          scheme: "interaction",
+          text: message.text,
+          context: { pairKey: pair.pairKey, participantId: message.participantId, sessionId: session.id, recordName: session.recordName, task: session.task, messageId: message.messageId, round: message.round ?? null },
+        });
+      }
+    }
+    if (pair.interview?.text) {
+      addTarget({
+        targetId: `interview:${pair.pairKey}`,
+        targetType: "interview",
+        scheme: "interaction",
+        text: pair.interview.text,
+        context: { pairKey: pair.pairKey, updatedAt: pair.interview.updatedAt || null },
+      });
+    }
+  }
+
+  for (const transcript of workspace.uploadedTranscripts || []) {
+    addTarget({
+      targetId: `uploaded-transcript:${transcript.id}`,
+      targetType: "interview_transcript",
+      scheme: "interaction",
+      text: transcript.text,
+      context: { transcriptId: transcript.id, title: transcript.title, sourceFileName: transcript.sourceFileName, createdAt: transcript.createdAt },
+    });
+  }
+
+  targets.sort((a, b) => a.targetId.localeCompare(b.targetId));
+  return {
+    targets,
+    datasetFingerprint: sha256Text(targets.map((target) => `${target.targetId}:${target.contentHash}`).join("\n")),
+  };
+}
+
+function buildCodingRoundtripDocument(exportedAt) {
+  const { targets, datasetFingerprint } = buildCodingTargetCatalog();
+  return {
+    schemaVersion: AI_CODING_IMPORT_SCHEMA,
+    exportedAt,
+    datasetFingerprint,
+    instructions: [
+      "只编辑 codingResult；不要修改 targets、codebook、schemaVersion 或 datasetFingerprint。",
+      "每条 annotation 必须引用一个 targetId，并原样复制该 target 的 contentHash 到 targetHash。",
+      "quote 必须是 target.text 中的连续原文。若 quote 重复出现，必须填写准确的 start 与 end 字符位置。",
+      "codes 至少一个；可使用 codebook 中与目标 scheme 相符的编码，或先在 codebookAdditions 中声明新编码。",
+      "上传只会追加 AI coding 与新 codebook 条目，不会覆盖任何原始实验数据或已有 coding。",
+    ],
+    allowedGroups: Object.entries(CODING_GROUP_SCHEMES).map(([groupId, scheme]) => ({ groupId, groupLabel: CODING_GROUP_LABELS[groupId], scheme })),
+    codebook: codingCodebook(),
+    targets,
+    codingResult: {
+      importId: randomUUID(),
+      coder: { type: "ai", model: "", promptVersion: "", notes: "" },
+      codebookAdditions: [],
+      annotations: [],
+    },
+  };
+}
+
+function buildAiCodingImportGuide(roundtrip) {
+  const exampleTarget = roundtrip.targets[0];
+  const exampleQuote = exampleTarget?.text?.slice(0, Math.min(24, exampleTarget.text.length)) || "目标文字中的连续原文";
+  const example = {
+    schemaVersion: AI_CODING_IMPORT_SCHEMA,
+    exportedAt: roundtrip.exportedAt,
+    datasetFingerprint: roundtrip.datasetFingerprint,
+    codingResult: {
+      importId: "请为每次编码运行生成唯一ID",
+      coder: { type: "ai", model: "模型名称", promptVersion: "提示词版本", notes: "可选说明" },
+      codebookAdditions: [{ groupId: "mechanism", code: "NEW_MECHANISM_CODE", description: "该编码适用的现象" }],
+      annotations: [{
+        targetId: exampleTarget?.targetId || "从 targets 中复制 targetId",
+        targetHash: exampleTarget?.contentHash || "从对应 target 复制 contentHash",
+        quote: exampleQuote,
+        start: exampleTarget ? 0 : 0,
+        end: exampleTarget ? exampleQuote.length : 0,
+        codes: [exampleTarget?.scheme === "profile" ? "REPRESENTATION_REGROUNDING" : "AA_STRUCTURAL"],
+        note: "简要编码备忘",
+      }],
+    },
+  };
+  return `# ProxyLab AI Coding 回传规范
+
+## 1. 文件用途与安全边界
+
+下载包中的 \`05_ai_coding_roundtrip.json\` 是唯一允许回传的文件。它包含稳定的编码目标、当前 codebook 和一个空的 \`codingResult\`。本地 AI 应只填写 \`codingResult\`，不得修改其他字段。
+
+上传采用“先预检、后确认”的追加模式。系统只会新增 AI coding、可选的新 codebook 条目和一条导入批次记录；不会修改或删除 Profile、Profile 修改记录、Recap、Transcript、Task 4 回答、参与者标记、采访原文或已有研究者 coding。\`01\`–\`04\` 文件和原始 \`store.json\` 均不应上传。
+
+## 2. 本地工作流程
+
+1. 将 \`05_ai_coding_roundtrip.json\` 提供给本地 AI。
+2. 要求 AI 阅读 \`codebook\` 与 \`targets\`，仅填写 \`codingResult\`。
+3. 保存为 UTF-8 JSON；单个文件不得超过 5 MB。
+4. 在“定性编码 → 编码汇总 → AI Coding 回写”选择文件并执行预检。
+5. 检查目标数、编码数、新 code 数及警告，再确认导入。
+
+## 3. 不得修改的根字段
+
+- \`schemaVersion\`：必须为 \`${AI_CODING_IMPORT_SCHEMA}\`。
+- \`exportedAt\`、\`datasetFingerprint\`：用于判断数据集是否变化。
+- \`allowedGroups\`、\`codebook\`、\`targets\`：只供本地编码参考；服务器以当前数据重新校验，不信任上传副本。
+
+## 4. codingResult 结构
+
+### importId
+
+每次本地编码运行必须使用唯一 ID，限 8–120 位字母、数字、下划线或连字符。同一个 \`importId\` 不能重复导入。模板已预生成一个可用 ID。
+
+### coder
+
+- \`type\` 固定为 \`ai\`。
+- \`model\`：实际使用的模型名称。
+- \`promptVersion\`：编码提示词或工作流版本。
+- \`notes\`：可选的批次说明。
+
+### codebookAdditions
+
+可选数组。每项必须包含：
+
+- \`groupId\`：只能是 \`profile\`、\`scope\`、\`mechanism\` 或 \`response\`。
+- \`code\`：2–80 位大写字母、数字或下划线，并以字母开头。
+- \`description\`：编码定义。
+
+新编码必须全局唯一；它的 scheme 必须与所标注 target 的 scheme 一致。单次最多添加 100 个。
+
+### annotations
+
+每项必须包含：
+
+- \`targetId\`：从目标的 \`targetId\` 原样复制。
+- \`targetHash\`：从同一目标的 \`contentHash\` 原样复制，用于防止材料变化后错位。
+- \`quote\`：必须是 \`target.text\` 中连续、完全一致的原文。
+- \`start\` / \`end\`：可选的 JavaScript UTF-16 字符位置，满足 \`target.text.slice(start, end) === quote\`。如果引文在目标中只出现一次，可省略并由服务器定位；如果重复出现则必须填写。
+- \`codes\`：1–50 个编码；必须属于目标 scheme，或已在本批次的 \`codebookAdditions\` 声明。
+- \`note\`：可选编码备忘，最长 5,000 字符。
+
+单次最多导入 5,000 条 annotation。不要提交空的 \`annotations\`。
+
+## 5. 示例
+
+以下仅示意需要填写的字段；实际使用时保留下载文件中的其他根字段和全部 targets：
+
+\`\`\`json
+${JSON.stringify(example, null, 2)}
+\`\`\`
+
+## 6. 预检与错误处理
+
+- 预检不写入任何数据。
+- 任一条 annotation、目标 hash、新 code 或引文位置不合法时，整份文件拒绝，不会部分导入。
+- 如果 \`datasetFingerprint\` 与当前服务器不同，界面会警告；每个 target 的 hash 仍须逐条匹配，否则拒绝。
+- 确认导入后，系统为每条 coding 生成新 ID，并记录模型、提示词版本、导入人、导入时间和批次 ID。
+- AI coding 是分析建议，仍应由研究者复核。
+`;
+}
+
+function prepareAiCodingImport(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw httpError(400, "上传内容必须是JSON对象");
+  if (payload.schemaVersion !== AI_CODING_IMPORT_SCHEMA) throw httpError(400, `schemaVersion必须为${AI_CODING_IMPORT_SCHEMA}`);
+  const result = payload.codingResult;
+  if (!result || typeof result !== "object" || Array.isArray(result)) throw httpError(400, "缺少codingResult对象");
+
+  const importId = String(result.importId || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(importId)) throw httpError(400, "importId需为8–120位字母、数字、下划线或连字符");
+  if ((store.qualitativeCoding.imports || []).some((item) => item.importId === importId)) throw httpError(409, "该importId已经导入，未重复写入");
+
+  const coder = {
+    type: "ai",
+    model: String(result.coder?.model || "").trim().slice(0, 200),
+    promptVersion: String(result.coder?.promptVersion || "").trim().slice(0, 200),
+    notes: String(result.coder?.notes || "").trim().slice(0, 2000),
+  };
+  if (result.coder?.type && result.coder.type !== "ai") throw httpError(400, "coder.type必须为ai");
+
+  const rawAdditions = Array.isArray(result.codebookAdditions) ? result.codebookAdditions : [];
+  if (rawAdditions.length > 100) throw httpError(400, "单次最多添加100个新编码");
+  const knownCodes = new Set(codingCodebook().map((item) => item.code));
+  const codebookAdditions = rawAdditions.map((item, index) => {
+    const groupId = String(item?.groupId || "").trim().toLowerCase();
+    const scheme = CODING_GROUP_SCHEMES[groupId];
+    const code = String(item?.code || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+    const description = String(item?.description || "").trim().slice(0, 500);
+    if (!scheme) throw httpError(400, `codebookAdditions[${index}]的groupId无效`);
+    if (!/^[A-Z][A-Z0-9_]{1,79}$/.test(code)) throw httpError(400, `codebookAdditions[${index}]的code格式无效`);
+    if (!description) throw httpError(400, `codebookAdditions[${index}]缺少description`);
+    if (knownCodes.has(code)) throw httpError(409, `编码${code}已经存在或在本批次重复`);
+    knownCodes.add(code);
+    return { code, description, groupId, scheme };
+  });
+
+  const { targets, datasetFingerprint } = buildCodingTargetCatalog();
+  const targetMap = new Map(targets.map((target) => [target.targetId, target]));
+  const codesByScheme = {
+    profile: new Set(codingCodebook().filter((item) => item.scheme === "profile").map((item) => item.code)),
+    interaction: new Set(codingCodebook().filter((item) => item.scheme === "interaction").map((item) => item.code)),
+  };
+  for (const addition of codebookAdditions) codesByScheme[addition.scheme].add(addition.code);
+
+  const rawAnnotations = Array.isArray(result.annotations) ? result.annotations : [];
+  if (!rawAnnotations.length) throw httpError(400, "codingResult.annotations不能为空");
+  if (rawAnnotations.length > 5000) throw httpError(400, "单次最多导入5000条编码");
+  const seen = new Set();
+  const annotations = rawAnnotations.map((item, index) => {
+    const targetId = String(item?.targetId || "").trim();
+    const target = targetMap.get(targetId);
+    if (!target) throw httpError(400, `annotations[${index}]引用了不存在的targetId`);
+    if (String(item?.targetHash || "") !== target.contentHash) throw httpError(400, `annotations[${index}]的targetHash不匹配，材料可能已经变化`);
+    const quote = String(item?.quote || "");
+    if (!quote.trim() || quote.length > 5000) throw httpError(400, `annotations[${index}]的quote为空或超过5000字符`);
+    let start = Number.isInteger(item?.start) ? item.start : null;
+    let end = Number.isInteger(item?.end) ? item.end : null;
+    if (start !== null && end !== null && start >= 0 && end >= start && target.text.slice(start, end) === quote) {
+      // Explicit offsets are valid.
+    } else {
+      const first = target.text.indexOf(quote);
+      const last = target.text.lastIndexOf(quote);
+      if (first < 0) throw httpError(400, `annotations[${index}]的quote不是目标中的连续原文`);
+      if (first !== last) throw httpError(400, `annotations[${index}]的quote重复出现，请提供准确start/end`);
+      start = first;
+      end = first + quote.length;
+    }
+    const codes = [...new Set(Array.isArray(item?.codes) ? item.codes.map((code) => String(code).trim().toUpperCase()) : [])];
+    if (!codes.length || codes.length > 50) throw httpError(400, `annotations[${index}]必须包含1–50个codes`);
+    if (codes.some((code) => !codesByScheme[target.scheme].has(code))) throw httpError(400, `annotations[${index}]包含未知编码或编码与目标类型不匹配`);
+    const duplicateKey = `${targetId}:${start}:${end}:${[...codes].sort().join(",")}`;
+    if (seen.has(duplicateKey)) throw httpError(409, `annotations[${index}]在本批次中重复`);
+    seen.add(duplicateKey);
+    return {
+      scheme: target.scheme,
+      targetType: target.targetType,
+      targetId,
+      quote,
+      start,
+      end,
+      codes,
+      note: String(item?.note || "").trim().slice(0, 5000),
+    };
+  });
+
+  const sourceDatasetFingerprint = String(payload.datasetFingerprint || "");
+  const warnings = [];
+  if (sourceDatasetFingerprint !== datasetFingerprint) warnings.push("下载后服务器材料发生过变化；所有本次目标hash均已逐条核验通过。未被本批次引用的新材料不会自动编码。");
+  return {
+    importId,
+    coder,
+    sourceExportedAt: String(payload.exportedAt || "").slice(0, 100),
+    sourceDatasetFingerprint,
+    currentDatasetFingerprint: datasetFingerprint,
+    codebookAdditions,
+    annotations,
+    warnings,
+    preview: {
+      importId,
+      annotationCount: annotations.length,
+      targetCount: new Set(annotations.map((item) => item.targetId)).size,
+      newCodeCount: codebookAdditions.length,
+      model: coder.model || "未填写",
+      warnings,
+    },
   };
 }
 
@@ -2106,6 +2512,64 @@ async function handleApi(req, res, url) {
     store.qualitativeCoding.customCodes.push(customCode);
     persist();
     return json(res, 201, { customCode: clone(customCode) });
+  }
+
+  if (req.method === "POST" && path === "/api/coding/imports/preview") {
+    requireAuth(req, "admin");
+    const body = await readJson(req, 5_000_000);
+    const prepared = prepareAiCodingImport(body);
+    return json(res, 200, { preview: prepared.preview });
+  }
+
+  if (req.method === "POST" && path === "/api/coding/imports") {
+    const auth = requireAuth(req, "admin");
+    const body = await readJson(req, 5_000_000);
+    const prepared = prepareAiCodingImport(body);
+    const importedAt = now();
+    const customCodes = prepared.codebookAdditions.map((item) => ({
+      id: randomUUID(),
+      ...item,
+      createdBy: auth.id,
+      createdAt: importedAt,
+      origin: "ai_import",
+      importId: prepared.importId,
+    }));
+    const annotations = prepared.annotations.map((item) => ({
+      id: randomUUID(),
+      author: `AI · ${prepared.coder.model || "未指定模型"}`,
+      ...item,
+      createdAt: importedAt,
+      origin: "ai_import",
+      importId: prepared.importId,
+      coder: clone(prepared.coder),
+    }));
+    const importBatch = {
+      id: randomUUID(),
+      importId: prepared.importId,
+      schemaVersion: AI_CODING_IMPORT_SCHEMA,
+      importedAt,
+      importedBy: auth.id,
+      coder: clone(prepared.coder),
+      sourceExportedAt: prepared.sourceExportedAt,
+      sourceDatasetFingerprint: prepared.sourceDatasetFingerprint,
+      currentDatasetFingerprint: prepared.currentDatasetFingerprint,
+      datasetChangedSinceExport: prepared.sourceDatasetFingerprint !== prepared.currentDatasetFingerprint,
+      annotationCount: annotations.length,
+      newCodeCount: customCodes.length,
+      warnings: clone(prepared.warnings),
+      originalDataMutation: "none",
+    };
+    // Append atomically after the full document has passed validation.
+    store.qualitativeCoding.customCodes.push(...customCodes);
+    store.qualitativeCoding.annotations.push(...annotations);
+    store.qualitativeCoding.imports.unshift(importBatch);
+    persist();
+    return json(res, 201, {
+      importBatch: clone(importBatch),
+      annotations: clone(annotations),
+      customCodes: clone(customCodes),
+      preview: prepared.preview,
+    });
   }
 
   if (req.method === "POST" && path === "/api/coding/annotations") {

@@ -644,7 +644,9 @@ try {
   assert.equal(archiveEntries.has("02_participant_recaps_and_annotations.json"), true);
   assert.equal(archiveEntries.has("03_agent_conversations_and_annotations.json"), true);
   assert.equal(archiveEntries.has("04_qualitative_coding.json"), true);
-  assert.equal(archiveEntries.size, 6);
+  assert.equal(archiveEntries.has("05_ai_coding_roundtrip.json"), true);
+  assert.equal(archiveEntries.has("AI_CODING_IMPORT_GUIDE.md"), true);
+  assert.equal(archiveEntries.size, 8);
   const exportedManifest = JSON.parse(archiveEntries.get("manifest.json"));
   assert.equal(exportedManifest.apiKeysIncluded, false);
   assert.equal(exportedManifest.rawStoreIncluded, false);
@@ -656,6 +658,7 @@ try {
   assert.equal(exportedManifest.profileRevisionCount, 1);
   assert.equal(exportedManifest.task4QuestionnaireCount, 2);
   assert.equal(exportedManifest.qualitativeCodingAnnotationCount, 2);
+  assert.equal(exportedManifest.aiCodingImportCount, 0);
   assert.equal(exportedManifest.interviewRecordCount, 1);
   assert.equal(exportedManifest.uploadedInterviewTranscriptCount, 1);
   const exportedProfiles = JSON.parse(archiveEntries.get("01_participant_profiles.json"));
@@ -696,6 +699,72 @@ try {
   assert.equal(exportedCoding.customCodes[0].code, "AUTHORITY_AMBIGUITY");
   assert.match(exportedCoding.interviews["P1A--P1B"].text, /核实候选方案/);
   assert.equal(exportedCoding.uploadedTranscripts[0].title, "P1A-P1B Re-entry interview");
+  assert.deepEqual(exportedCoding.imports, []);
+  const codingRoundtrip = JSON.parse(archiveEntries.get("05_ai_coding_roundtrip.json"));
+  assert.equal(codingRoundtrip.schemaVersion, "proxylab-ai-coding-import/v1");
+  assert.equal(codingRoundtrip.targets.length, exportedManifest.codingTargetCount);
+  assert.equal(codingRoundtrip.codingResult.annotations.length, 0);
+  const importGuide = archiveEntries.get("AI_CODING_IMPORT_GUIDE.md").toString("utf8");
+  assert.match(importGuide, /唯一允许回传的文件/);
+  assert.match(importGuide, /不会修改或删除 Profile/);
+  assert.match(importGuide, /JavaScript UTF-16/);
+
+  const originalDataBeforeAiImport = [
+    "01_participant_profiles.json",
+    "02_participant_recaps_and_annotations.json",
+    "03_agent_conversations_and_annotations.json",
+  ].map((name) => [name, archiveEntries.get(name).toString("utf8")]);
+  const importTarget = codingRoundtrip.targets.find((target) => target.targetType === "transcript");
+  assert.ok(importTarget);
+  const quote = importTarget.text.slice(0, Math.min(12, importTarget.text.length));
+  const importPayload = {
+    ...codingRoundtrip,
+    codingResult: {
+      ...codingRoundtrip.codingResult,
+      coder: { type: "ai", model: "local-test-model", promptVersion: "smoke-v1", notes: "自动化测试" },
+      codebookAdditions: [{ groupId: "mechanism", code: "AI_IMPORT_TEST", description: "测试AI回传的新机制编码" }],
+      annotations: [{
+        targetId: importTarget.targetId,
+        targetHash: importTarget.contentHash,
+        quote,
+        start: 0,
+        end: quote.length,
+        codes: ["AA_STRUCTURAL", "AI_IMPORT_TEST"],
+        note: "本地AI编码结果",
+      }],
+    },
+  };
+  await request("/api/coding/imports/preview", { token: p1a.token, method: "POST", expected: 403, body: importPayload });
+  await request("/api/coding/imports/preview", {
+    token: admin.token,
+    method: "POST",
+    expected: 400,
+    body: { ...importPayload, codingResult: { ...importPayload.codingResult, annotations: [{ ...importPayload.codingResult.annotations[0], targetHash: "invalid" }] } },
+  });
+  const afterRejectedImport = await request("/api/coding/workspace", { token: admin.token });
+  assert.equal(afterRejectedImport.workspace.codingAnnotations.length, 2);
+  assert.equal(afterRejectedImport.workspace.customCodes.length, 1);
+  const importPreview = await request("/api/coding/imports/preview", { token: admin.token, method: "POST", body: importPayload });
+  assert.equal(importPreview.preview.annotationCount, 1);
+  assert.equal(importPreview.preview.newCodeCount, 1);
+  const imported = await request("/api/coding/imports", { token: admin.token, method: "POST", expected: 201, body: importPayload });
+  assert.equal(imported.annotations[0].origin, "ai_import");
+  assert.equal(imported.annotations[0].author, "AI · local-test-model");
+  assert.equal(imported.customCodes[0].code, "AI_IMPORT_TEST");
+  assert.equal(imported.importBatch.originalDataMutation, "none");
+  await request("/api/coding/imports", { token: admin.token, method: "POST", expected: 409, body: importPayload });
+  const codingWorkspaceImported = await request("/api/coding/workspace", { token: admin.token });
+  assert.equal(codingWorkspaceImported.workspace.codingAnnotations.length, 3);
+  assert.equal(codingWorkspaceImported.workspace.customCodes.length, 2);
+  assert.equal(codingWorkspaceImported.workspace.codingImports.length, 1);
+
+  const exportAfterImportResponse = await fetch(`${base}/api/export/all.zip`, { headers: { Authorization: `Bearer ${admin.token}` } });
+  assert.equal(exportAfterImportResponse.status, 200);
+  const entriesAfterImport = readStoredZipEntries(Buffer.from(await exportAfterImportResponse.arrayBuffer()));
+  for (const [name, original] of originalDataBeforeAiImport) assert.equal(entriesAfterImport.get(name).toString("utf8"), original);
+  const codingAfterImport = JSON.parse(entriesAfterImport.get("04_qualitative_coding.json"));
+  assert.equal(codingAfterImport.annotations.length, 3);
+  assert.equal(codingAfterImport.imports.length, 1);
   assert.equal(archive.includes(Buffer.from('"apiKey": "test"')), false);
   await request(`/api/sessions/${sessionId}`, { token: p1a.token, method: "DELETE", expected: 403 });
   const deleted = await request(`/api/sessions/${sessionId}`, { token: admin.token, method: "DELETE" });

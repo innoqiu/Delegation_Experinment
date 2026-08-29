@@ -378,10 +378,15 @@ function originalExport(workspace, category) {
   })));
 }
 
-function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, notify }) {
+function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, onCodingImported, notify }) {
   const [selectedCode, setSelectedCode] = useState("ALL");
   const [newCode, setNewCode] = useState({ groupId: "scope", code: "", description: "" });
   const [savingCode, setSavingCode] = useState(false);
+  const [importFileName, setImportFileName] = useState("");
+  const [importPayload, setImportPayload] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [checkingImport, setCheckingImport] = useState(false);
+  const [importing, setImporting] = useState(false);
   const allCodeGroups = [
     ...codeGroupsForScheme("profile", workspace.customCodes),
     ...codeGroupsForScheme("interaction", workspace.customCodes),
@@ -427,6 +432,63 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, notify }) 
     }
   }
 
+  async function chooseImportFile(event) {
+    const file = event.target.files?.[0];
+    setImportPreview(null);
+    setImportPayload(null);
+    setImportFileName(file?.name || "");
+    if (!file) return;
+    if (file.size > 5_000_000) {
+      notify("上传文件不能超过5 MB", "error");
+      event.target.value = "";
+      setImportFileName("");
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (parsed.schemaVersion !== "proxylab-ai-coding-import/v1") throw new Error("请选择下载包中的05_ai_coding_roundtrip.json，并保留schemaVersion");
+      setImportPayload(parsed);
+    } catch (error) {
+      notify(error instanceof SyntaxError ? "文件不是有效的JSON" : error.message, "error");
+      event.target.value = "";
+      setImportFileName("");
+    }
+  }
+
+  async function previewCodingImport() {
+    if (!importPayload) return;
+    setCheckingImport(true);
+    setImportPreview(null);
+    try {
+      const { preview } = await api("/api/coding/imports/preview", { method: "POST", body: jsonBody(importPayload) });
+      setImportPreview(preview);
+      notify("预检通过；确认后才会追加写入");
+    } catch (error) {
+      notify(`预检失败：${error.message}`, "error");
+    } finally {
+      setCheckingImport(false);
+    }
+  }
+
+  async function confirmCodingImport() {
+    if (!importPayload || !importPreview) return;
+    setImporting(true);
+    try {
+      const result = await api("/api/coding/imports", { method: "POST", body: jsonBody(importPayload) });
+      onCodingImported(result);
+      setImportPayload(null);
+      setImportPreview(null);
+      setImportFileName("");
+      const input = document.getElementById("ai-coding-import-file");
+      if (input) input.value = "";
+      notify(`已追加导入${result.annotations.length}条AI coding；原始实验数据未改动`);
+    } catch (error) {
+      notify(`导入失败：${error.message}`, "error");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div className="coding-summary-page">
       <header className="coding-page-header">
@@ -434,7 +496,7 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, notify }) 
         <p>按标签查看全部研究编码；导出文件只保留原始材料，不携带研究者 coding 结果。</p>
       </header>
       <section className="coding-export-panel">
-        <div><h2>原文分类导出</h2><p>四类材料分别导出为 JSON，便于后续归档或转换。</p></div>
+        <div><h2>原文分类导出</h2><p>五类材料分别导出为 JSON，便于后续归档或转换。</p></div>
         <div className="coding-export-actions">
           {exportItems.map(([category, label]) => <button type="button" className="button button-secondary" onClick={() => download(category)} key={category}><Icon name="download" size={15} />{label}</button>)}
         </div>
@@ -452,6 +514,36 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, notify }) 
           <button type="submit" className="button button-primary" disabled={savingCode || !newCode.code.trim() || !newCode.description.trim()}>{savingCode ? "添加中…" : "添加编码"}</button>
         </form>
         {workspace.customCodes?.length ? <div className="coding-custom-code-list">{workspace.customCodes.map((item) => <span title={item.description} key={item.id}>{item.code} · {CODE_GROUP_OPTIONS.find(([value]) => value === item.groupId)?.[1]}</span>)}</div> : null}
+      </section>
+      <section className="coding-import-panel">
+        <div className="coding-import-intro">
+          <span>ROUND-TRIP IMPORT</span>
+          <h2>AI Coding 回写</h2>
+          <p>仅接受下载包中的 <code>05_ai_coding_roundtrip.json</code>。本地 AI 只应填写 <code>codingResult</code>；系统先预检，再以新批次追加，不覆盖任何原始材料、参与者标记或既有 coding。</p>
+        </div>
+        <div className="coding-import-controls">
+          <label className="coding-import-file" htmlFor="ai-coding-import-file">
+            <span>{importFileName || "选择已填写的回传 JSON"}</span>
+            <strong>选择文件</strong>
+          </label>
+          <input id="ai-coding-import-file" type="file" accept=".json,application/json" onChange={chooseImportFile} />
+          <div className="coding-import-actions">
+            <button type="button" className="button button-secondary" disabled={!importPayload || checkingImport || importing} onClick={previewCodingImport}>{checkingImport ? "预检中…" : "预检文件"}</button>
+            <button type="button" className="button button-primary" disabled={!importPreview || importing} onClick={confirmCodingImport}>{importing ? "导入中…" : "确认追加导入"}</button>
+          </div>
+        </div>
+        {importPreview ? <div className="coding-import-preview">
+          <strong>预检通过</strong>
+          <span>{importPreview.annotationCount} 条 coding</span>
+          <span>{importPreview.targetCount} 个目标</span>
+          <span>{importPreview.newCodeCount} 个新 code</span>
+          <span>模型：{importPreview.model}</span>
+          {importPreview.warnings?.map((warning) => <p key={warning}>注意：{warning}</p>)}
+        </div> : null}
+        {workspace.codingImports?.length ? <details className="coding-import-history">
+          <summary>已导入批次（{workspace.codingImports.length}）</summary>
+          {workspace.codingImports.map((item) => <div key={item.id}><strong>{item.coder?.model || "未指定模型"}</strong><span>{item.annotationCount} 条 · {formatDate(item.importedAt)}</span><code>{item.importId}</code></div>)}
+        </details> : null}
       </section>
       <section className="coding-summary-panel">
         <div className="coding-section-heading"><div><span>01</span><h2>按 Code 查看</h2></div><small>{workspace.codingAnnotations.length} 条研究编码</small></div>
@@ -480,7 +572,7 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, notify }) 
 }
 
 export default function CodingPage({ notify }) {
-  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], participantMarks: [], uploadedTranscripts: [], codingAnnotations: [], customCodes: [] });
+  const [workspace, setWorkspace] = useState({ participants: [], pairs: [], participantMarks: [], uploadedTranscripts: [], codingAnnotations: [], customCodes: [], codingImports: [] });
   const [mode, setMode] = useState("individual");
   const [participantId, setParticipantId] = useState("");
   const [pairKey, setPairKey] = useState("");
@@ -544,6 +636,15 @@ export default function CodingPage({ notify }) {
     setWorkspace((current) => ({ ...current, customCodes: [...(current.customCodes || []), customCode] }));
   }
 
+  function applyCodingImport(result) {
+    setWorkspace((current) => ({
+      ...current,
+      codingAnnotations: [...(current.codingAnnotations || []), ...(result.annotations || [])],
+      customCodes: [...(current.customCodes || []), ...(result.customCodes || [])],
+      codingImports: [result.importBatch, ...(current.codingImports || [])],
+    }));
+  }
+
   function openContext(annotation) {
     const parts = annotation.targetId.split(":");
     if (annotation.targetType === "interview_transcript" && parts[0] === "uploaded-transcript") {
@@ -603,7 +704,7 @@ export default function CodingPage({ notify }) {
         <PairCoding workspace={workspace} pairKey={selectedPair?.pairKey || ""} sessionId={sessionId} onPairChange={changePair} onSessionChange={setSessionId} onInterviewSaved={saveInterview} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
       ) : mode === "uploaded-transcripts" ? (
         <InterviewTranscriptCoding workspace={workspace} transcriptId={uploadedTranscriptId} onTranscriptChange={setUploadedTranscriptId} onTranscriptCreated={addUploadedTranscript} onAnnotationSaved={addAnnotation} onAnnotationDeleted={deleteAnnotation} notify={notify} />
-      ) : <CodingSummary workspace={workspace} onOpenContext={openContext} onCustomCodeAdded={addCustomCode} notify={notify} />}
+      ) : <CodingSummary workspace={workspace} onOpenContext={openContext} onCustomCodeAdded={addCustomCode} onCodingImported={applyCodingImport} notify={notify} />}
     </div>
   );
 }
