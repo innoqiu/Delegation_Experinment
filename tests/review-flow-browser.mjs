@@ -371,6 +371,9 @@ try {
   writeFileSync(uploadedTranscriptScreenshotPath, Buffer.from(uploadedTranscriptScreenshot.data, "base64"));
   await evaluate(client.call, "([...document.querySelectorAll('.coding-mode-tabs button')].find((node) => node.innerText.includes('编码汇总'))).click(); true");
   await waitFor(() => evaluate(client.call, "document.body.innerText.includes('编码汇总与原文导出') && document.querySelectorAll('.coding-export-actions button').length === 5"), "Coding summary or five original export actions did not render");
+  assert.equal(await evaluate(client.call, "document.querySelector('.coding-import-intro p').textContent.trim()"), "追加导入");
+  assert.equal(await evaluate(client.call, "document.querySelectorAll('.coding-import-panel button').length"), 1);
+  assert.equal(await evaluate(client.call, "document.querySelector('.coding-import-panel').innerText.includes('JSON')"), false);
   await evaluate(client.call, "(() => { window.__codingDownloads = []; window.__originalAnchorClick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { fetch(this.href).then((response) => response.text()).then((text) => window.__codingDownloads.push({ filename: this.download, text })); }; [...document.querySelectorAll('.coding-export-actions button')].find((node) => node.innerText.includes('Profile 修改')).click(); return true; })()");
   await waitFor(() => evaluate(client.call, "window.__codingDownloads.length === 1"), "Original-content export was not generated");
   const exportedProfileText = await evaluate(client.call, "window.__codingDownloads[0].text");

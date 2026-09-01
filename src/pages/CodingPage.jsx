@@ -384,8 +384,6 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, onCodingIm
   const [savingCode, setSavingCode] = useState(false);
   const [importFileName, setImportFileName] = useState("");
   const [importPayload, setImportPayload] = useState(null);
-  const [importPreview, setImportPreview] = useState(null);
-  const [checkingImport, setCheckingImport] = useState(false);
   const [importing, setImporting] = useState(false);
   const allCodeGroups = [
     ...codeGroupsForScheme("profile", workspace.customCodes),
@@ -434,7 +432,6 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, onCodingIm
 
   async function chooseImportFile(event) {
     const file = event.target.files?.[0];
-    setImportPreview(null);
     setImportPayload(null);
     setImportFileName(file?.name || "");
     if (!file) return;
@@ -446,38 +443,23 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, onCodingIm
     }
     try {
       const parsed = JSON.parse(await file.text());
-      if (parsed.schemaVersion !== "proxylab-ai-coding-import/v1") throw new Error("请选择下载包中的05_ai_coding_roundtrip.json，并保留schemaVersion");
+      if (parsed.schemaVersion !== "proxylab-ai-coding-import/v1") throw new Error("文件格式不正确");
       setImportPayload(parsed);
     } catch (error) {
-      notify(error instanceof SyntaxError ? "文件不是有效的JSON" : error.message, "error");
+      notify(error instanceof SyntaxError ? "文件格式不正确" : error.message, "error");
       event.target.value = "";
       setImportFileName("");
     }
   }
 
-  async function previewCodingImport() {
+  async function appendCodingImport() {
     if (!importPayload) return;
-    setCheckingImport(true);
-    setImportPreview(null);
-    try {
-      const { preview } = await api("/api/coding/imports/preview", { method: "POST", body: jsonBody(importPayload) });
-      setImportPreview(preview);
-      notify("预检通过；确认后才会追加写入");
-    } catch (error) {
-      notify(`预检失败：${error.message}`, "error");
-    } finally {
-      setCheckingImport(false);
-    }
-  }
-
-  async function confirmCodingImport() {
-    if (!importPayload || !importPreview) return;
     setImporting(true);
     try {
+      await api("/api/coding/imports/preview", { method: "POST", body: jsonBody(importPayload) });
       const result = await api("/api/coding/imports", { method: "POST", body: jsonBody(importPayload) });
       onCodingImported(result);
       setImportPayload(null);
-      setImportPreview(null);
       setImportFileName("");
       const input = document.getElementById("ai-coding-import-file");
       if (input) input.value = "";
@@ -517,33 +499,17 @@ function CodingSummary({ workspace, onOpenContext, onCustomCodeAdded, onCodingIm
       </section>
       <section className="coding-import-panel">
         <div className="coding-import-intro">
-          <span>ROUND-TRIP IMPORT</span>
           <h2>AI Coding 回写</h2>
-          <p>仅接受下载包中的 <code>05_ai_coding_roundtrip.json</code>。本地 AI 只应填写 <code>codingResult</code>；系统先预检，再以新批次追加，不覆盖任何原始材料、参与者标记或既有 coding。</p>
+          <p>追加导入</p>
         </div>
         <div className="coding-import-controls">
           <label className="coding-import-file" htmlFor="ai-coding-import-file">
-            <span>{importFileName || "选择已填写的回传 JSON"}</span>
+            <span>{importFileName || "选择文件"}</span>
             <strong>选择文件</strong>
           </label>
           <input id="ai-coding-import-file" type="file" accept=".json,application/json" onChange={chooseImportFile} />
-          <div className="coding-import-actions">
-            <button type="button" className="button button-secondary" disabled={!importPayload || checkingImport || importing} onClick={previewCodingImport}>{checkingImport ? "预检中…" : "预检文件"}</button>
-            <button type="button" className="button button-primary" disabled={!importPreview || importing} onClick={confirmCodingImport}>{importing ? "导入中…" : "确认追加导入"}</button>
-          </div>
+          <button type="button" className="button button-primary" disabled={!importPayload || importing} onClick={appendCodingImport}>{importing ? "导入中…" : "追加导入"}</button>
         </div>
-        {importPreview ? <div className="coding-import-preview">
-          <strong>预检通过</strong>
-          <span>{importPreview.annotationCount} 条 coding</span>
-          <span>{importPreview.targetCount} 个目标</span>
-          <span>{importPreview.newCodeCount} 个新 code</span>
-          <span>模型：{importPreview.model}</span>
-          {importPreview.warnings?.map((warning) => <p key={warning}>注意：{warning}</p>)}
-        </div> : null}
-        {workspace.codingImports?.length ? <details className="coding-import-history">
-          <summary>已导入批次（{workspace.codingImports.length}）</summary>
-          {workspace.codingImports.map((item) => <div key={item.id}><strong>{item.coder?.model || "未指定模型"}</strong><span>{item.annotationCount} 条 · {formatDate(item.importedAt)}</span><code>{item.importId}</code></div>)}
-        </details> : null}
       </section>
       <section className="coding-summary-panel">
         <div className="coding-section-heading"><div><span>01</span><h2>按 Code 查看</h2></div><small>{workspace.codingAnnotations.length} 条研究编码</small></div>
